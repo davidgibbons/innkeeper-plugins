@@ -153,6 +153,8 @@ func TestDecodeRejects(t *testing.T) {
 		"text":         []byte("hello"),
 		"unknown spec": []byte(`{"spec": "chara_card_v9", "data": {}}`),
 		"no name":      []byte(`{"foo": 1}`),
+		"name only":    []byte(`{"name": "x"}`),
+		"name, other":  []byte(`{"name": "x", "model": "gpt"}`),
 		"V2 no data":   []byte(`{"spec": "chara_card_v2"}`),
 		"plain PNG":    img,
 	} {
