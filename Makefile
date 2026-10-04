@@ -5,6 +5,7 @@ PLUGINS := $(shell sed -n 's/^path = "\(.*\)"/\1/p' index.toml)
 
 # Each binary goes in its plugin's folder, where command = ["./<folder>"] finds it.
 build:
+	$(if $(PLUGINS),,$(error no plugins found in index.toml; each entry needs a line like path = "folder"))
 	for p in $(PLUGINS); do CGO_ENABLED=0 go build -trimpath -o $$p/$$p ./$$p || exit 1; done
 
 # Runs the contract kit from the core version go.mod pins.
