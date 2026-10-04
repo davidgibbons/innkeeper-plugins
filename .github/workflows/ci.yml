@@ -23,6 +23,7 @@ jobs:
         env:
           DEPLOY_KEY: ${{ secrets.INNKEEPER_DEPLOY_KEY }}
         run: |
+          test -n "$DEPLOY_KEY" || { echo "INNKEEPER_DEPLOY_KEY is not set; add a read-only deploy key for davidgibbons/innkeeper as a repository secret"; exit 1; }
           mkdir -p -m 700 ~/.ssh
           printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
