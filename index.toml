@@ -1,2 +1,10 @@
 # One [[plugin]] entry per plugin folder. Format: innkeeper core design spec,
 # "Plugin repository".
+
+[[plugin]]
+name = "card-codec"
+path = "card-codec"
+version = "0.1.0"
+protocol = 1
+capabilities = ["codec"]
+description = "Read and write character cards: CCv3, V2, and V1, as PNG and JSON."
