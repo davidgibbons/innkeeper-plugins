@@ -34,3 +34,21 @@ func TestTextChunk(t *testing.T) {
 		t.Fatal("IDAT read as text")
 	}
 }
+
+func TestReadChunksRejects(t *testing.T) {
+	img, err := placeholder()
+	if err != nil {
+		t.Fatal(err)
+	}
+	huge := append([]byte(nil), img...)
+	copy(huge[8:12], []byte{0xff, 0xff, 0xff, 0xff})
+	for name, in := range map[string][]byte{
+		"cut inside IDAT": img[:len(img)/2],
+		"no IEND":         img[:len(img)-12],
+		"huge length":     huge,
+	} {
+		if _, err := readChunks(in); err == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+}
