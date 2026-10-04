@@ -31,6 +31,9 @@ const (
 	FormatJSONV2 = "json-v2"
 )
 
+// maxAvatarPixels bounds the memory a hostile avatar header can make Encode allocate.
+const maxAvatarPixels = 4096 * 4096
+
 // PNG text chunk keywords. ccv3 holds a CCv3 card. chara holds a V2 card for
 // older apps, or in some writers' files a V3 one.
 const (
@@ -76,7 +79,7 @@ func Decode(b []byte) (card json.RawMessage, img []byte, err error) {
 
 // Encode writes a card in format and returns the file and its extension.
 // avatar is the card's image in any format image.Decode reads, or nil, which
-// gives a PNG a plain placeholder.
+// gives a PNG a plain placeholder. An animated avatar keeps only its first frame.
 func Encode(card json.RawMessage, format string, avatar []byte) ([]byte, string, error) {
 	card, err := toV3(card)
 	if err != nil {
@@ -144,7 +147,7 @@ func toV3(raw []byte) (json.RawMessage, error) {
 	default:
 		return nil, fmt.Errorf("%w: unknown spec %q", ErrNotCard, spec)
 	}
-	if _, ok := data["group_only_greetings"]; !ok {
+	if g := data["group_only_greetings"]; len(g) == 0 || string(g) == "null" {
 		data["group_only_greetings"] = json.RawMessage("[]")
 	}
 	return json.Marshal(map[string]any{"spec": "chara_card_v3", "spec_version": "3.0", "data": data})
@@ -167,6 +170,14 @@ func toV2(card json.RawMessage) ([]byte, error) {
 func asPNG(avatar []byte) ([]byte, error) {
 	if len(avatar) == 0 {
 		return placeholder()
+	}
+	// DecodeConfig reads only the header, so the cap applies before any pixels are allocated.
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(avatar))
+	if err != nil {
+		return nil, fmt.Errorf("read avatar: %w", err)
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width*cfg.Height > maxAvatarPixels {
+		return nil, fmt.Errorf("avatar is %dx%d, over the %d pixel limit", cfg.Width, cfg.Height, maxAvatarPixels)
 	}
 	if isPNG(avatar) {
 		return avatar, nil
