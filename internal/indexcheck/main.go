@@ -48,7 +48,7 @@ func check(root string) []error {
 	}
 	listed := map[string]bool{}
 	for _, e := range index.Plugin {
-		if !filepath.IsLocal(e.Path) || strings.ContainsRune(e.Path, '/') {
+		if e.Path == "." || !filepath.IsLocal(e.Path) || strings.ContainsRune(e.Path, '/') {
 			errs = append(errs, fmt.Errorf("%s: path %q must be a folder at the repo root", e.Name, e.Path))
 			continue
 		}

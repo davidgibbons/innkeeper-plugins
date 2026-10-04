@@ -12,6 +12,7 @@ check: build
 	for p in $(PLUGINS); do go tool innkeeper plugin check $$p || exit 1; done
 
 # Copies each plugin's binary and manifest into DEST, such as an image's plugin folder.
+# build runs after the DEST check, so a missing DEST fails before building.
 install:
 	$(if $(DEST),,$(error DEST is required, such as make install DEST=/plugins))
 	$(MAKE) build

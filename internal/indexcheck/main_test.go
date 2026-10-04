@@ -58,3 +58,14 @@ description = "No folder."
 		t.Fatalf("got %d problems, want 4: %v", len(errs), errs)
 	}
 }
+
+func TestCheckRejectsRepoRootPath(t *testing.T) {
+	root := t.TempDir()
+	index := "[[plugin]]\nname = \"x\"\npath = \".\"\nversion = \"1.0.0\"\nprotocol = 1\ncapabilities = []\ndescription = \"d\"\n"
+	if err := os.WriteFile(filepath.Join(root, "index.toml"), []byte(index), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if errs := check(root); len(errs) != 1 {
+		t.Fatalf("got %d problems, want 1: %v", len(errs), errs)
+	}
+}
