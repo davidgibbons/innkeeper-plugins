@@ -129,6 +129,21 @@ func TestDecodePrefersCCv3(t *testing.T) {
 	}
 }
 
+func TestDecodeV3InCharaChunk(t *testing.T) {
+	img, err := placeholder()
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunks, _ := readChunks(img)
+	v3 := `{"spec": "chara_card_v3", "spec_version": "3.0", "data": {"name": "Only"}}`
+	end := chunks[len(chunks)-1]
+	chunks = append(chunks[:len(chunks)-1], textChunk("chara", b64([]byte(v3))), end)
+	card, _, err := Decode(writeChunks(chunks))
+	if err != nil || string(card) != v3 {
+		t.Fatalf("%v %s", err, card)
+	}
+}
+
 func TestDecodeRejects(t *testing.T) {
 	img, err := placeholder()
 	if err != nil {
