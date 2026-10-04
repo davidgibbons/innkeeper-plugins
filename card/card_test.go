@@ -28,7 +28,7 @@ func TestGolden(t *testing.T) {
 	}
 	n := 0
 	for _, f := range files {
-		if strings.HasSuffix(f, ".want.json") {
+		if strings.HasSuffix(f, ".want.json") || strings.HasSuffix(f, ".md") {
 			continue
 		}
 		n++
@@ -241,7 +241,7 @@ func TestEncodeRejectsHugeAvatar(t *testing.T) {
 func FuzzDecode(f *testing.F) {
 	files, _ := filepath.Glob("testdata/*")
 	for _, name := range files {
-		if b, err := os.ReadFile(name); err == nil && !strings.HasSuffix(name, ".want.json") {
+		if b, err := os.ReadFile(name); err == nil && !strings.HasSuffix(name, ".want.json") && !strings.HasSuffix(name, ".md") {
 			f.Add(b)
 		}
 	}
