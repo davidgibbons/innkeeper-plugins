@@ -205,18 +205,21 @@ func TestEncodeRejectsHugeAvatar(t *testing.T) {
 	b := g.Bytes()
 	b[6], b[7], b[8], b[9] = 0x20, 0x4e, 0x20, 0x4e // 20000 x 20000
 	card := []byte(`{"spec": "chara_card_v3", "spec_version": "3.0", "data": {"name": "Big"}}`)
-	if _, _, err := Encode(card, FormatPNG, b); err == nil {
-		t.Fatal("no error for a 20000x20000 GIF")
+	if _, _, err := Encode(card, FormatPNG, b); err == nil || !strings.Contains(err.Error(), "limit") {
+		t.Fatalf("GIF err = %v, want the pixel limit", err)
 	}
-	// A PNG header claiming 20000x20000.
+	// A PNG whose IHDR claims 20000x20000, with a valid CRC.
 	img, err := placeholder()
 	if err != nil {
 		t.Fatal(err)
 	}
-	img = append([]byte(nil), img...)
-	copy(img[16:24], []byte{0, 0, 0x4e, 0x20, 0, 0, 0x4e, 0x20})
-	if _, _, err := Encode(card, FormatPNG, img); err == nil {
-		t.Fatal("no error for a 20000x20000 PNG")
+	chunks, err := readChunks(img)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunks[0].data = append([]byte{0, 0, 0x4e, 0x20, 0, 0, 0x4e, 0x20}, chunks[0].data[8:]...)
+	if _, _, err := Encode(card, FormatPNG, writeChunks(chunks)); err == nil || !strings.Contains(err.Error(), "limit") {
+		t.Fatalf("PNG err = %v, want the pixel limit", err)
 	}
 }
 

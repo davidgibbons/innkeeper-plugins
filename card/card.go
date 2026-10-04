@@ -176,7 +176,10 @@ func asPNG(avatar []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read avatar: %w", err)
 	}
-	if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width*cfg.Height > maxAvatarPixels {
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		return nil, errors.New("avatar has no pixels")
+	}
+	if cfg.Width*cfg.Height > maxAvatarPixels {
 		return nil, fmt.Errorf("avatar is %dx%d, over the %d pixel limit", cfg.Width, cfg.Height, maxAvatarPixels)
 	}
 	if isPNG(avatar) {
