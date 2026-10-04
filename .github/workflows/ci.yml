@@ -1,0 +1,37 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  GOPRIVATE: github.com/davidgibbons/innkeeper
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # The core repo is private; a read-only deploy key on it lets Go fetch it.
+      - name: Read access to innkeeper
+        env:
+          DEPLOY_KEY: ${{ secrets.INNKEEPER_DEPLOY_KEY }}
+        run: |
+          mkdir -p -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' >> ~/.ssh/known_hosts
+          git config --global url."git@github.com:davidgibbons/innkeeper".insteadOf https://github.com/davidgibbons/innkeeper
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test -race ./...
+      - run: go run ./internal/indexcheck
+      - run: make check
