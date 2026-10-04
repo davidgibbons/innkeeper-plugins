@@ -1,0 +1,197 @@
+// Package card reads and writes character card files: CCv3, V2, and V1
+// cards as JSON, and as PNG images that carry the card in a text chunk.
+package card
+
+import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	"image/png"
+	"strings"
+	"unicode"
+
+	_ "golang.org/x/image/webp"
+)
+
+var (
+	// ErrNotCard means the input isn't a card this package can read.
+	ErrNotCard = errors.New("not a character card")
+	// ErrUnknownFormat means Encode doesn't write the format.
+	ErrUnknownFormat = errors.New("unknown format")
+)
+
+// Formats Encode writes.
+const (
+	FormatPNG    = "png"
+	FormatJSONV2 = "json-v2"
+)
+
+// PNG text chunk keywords. ccv3 holds a CCv3 card. chara holds a V2 card for
+// older apps, or in some writers' files a V3 one.
+const (
+	keywordV3 = "ccv3"
+	keywordV2 = "chara"
+)
+
+// Decode reads a card file. It returns the card as CCv3 JSON and, for a PNG,
+// the image without its card chunks. A CCv3 card comes back unchanged.
+func Decode(b []byte) (card json.RawMessage, img []byte, err error) {
+	if !isPNG(b) {
+		card, err = toV3(b)
+		return card, nil, err
+	}
+	chunks, err := readChunks(b)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: %w", ErrNotCard, err)
+	}
+	found := map[string][]byte{}
+	var kept []chunk
+	for _, c := range chunks {
+		if k, text, ok := c.text(); ok && (k == keywordV3 || k == keywordV2) {
+			found[k] = text
+			continue
+		}
+		kept = append(kept, c)
+	}
+	text, ok := found[keywordV3]
+	if !ok {
+		if text, ok = found[keywordV2]; !ok {
+			return nil, nil, fmt.Errorf("%w: the PNG has no ccv3 or chara chunk", ErrNotCard)
+		}
+	}
+	raw, err := unbase64(text)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: %w", ErrNotCard, err)
+	}
+	if card, err = toV3(raw); err != nil {
+		return nil, nil, err
+	}
+	return card, writeChunks(kept), nil
+}
+
+// Encode writes a card in format and returns the file and its extension.
+// avatar is the card's image in any format image.Decode reads, or nil, which
+// gives a PNG a plain placeholder.
+func Encode(card json.RawMessage, format string, avatar []byte) ([]byte, string, error) {
+	card, err := toV3(card)
+	if err != nil {
+		return nil, "", err
+	}
+	v2, err := toV2(card)
+	if err != nil {
+		return nil, "", err
+	}
+	switch format {
+	case FormatJSONV2:
+		return v2, "json", nil
+	case FormatPNG:
+		img, err := asPNG(avatar)
+		if err != nil {
+			return nil, "", err
+		}
+		chunks, err := readChunks(img)
+		if err != nil {
+			return nil, "", fmt.Errorf("avatar: %w", err)
+		}
+		out := make([]chunk, 0, len(chunks)+2)
+		for _, c := range chunks {
+			if k, _, ok := c.text(); ok && (k == keywordV3 || k == keywordV2) {
+				continue
+			}
+			if c.typ == "IEND" {
+				out = append(out, textChunk(keywordV2, b64(v2)), textChunk(keywordV3, b64(card)))
+			}
+			out = append(out, c)
+		}
+		return writeChunks(out), "png", nil
+	}
+	return nil, "", fmt.Errorf("%w %q", ErrUnknownFormat, format)
+}
+
+// toV3 converts a CCv3, V2, or V1 card in JSON to CCv3.
+func toV3(raw []byte) (json.RawMessage, error) {
+	raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &top); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrNotCard, err)
+	}
+	var spec string
+	if s, ok := top["spec"]; ok {
+		if err := json.Unmarshal(s, &spec); err != nil {
+			return nil, fmt.Errorf("%w: spec must be a string", ErrNotCard)
+		}
+	}
+	var data map[string]json.RawMessage
+	switch spec {
+	case "chara_card_v3", "chara_card_v2":
+		if err := json.Unmarshal(top["data"], &data); err != nil || data == nil {
+			return nil, fmt.Errorf("%w: data must be an object", ErrNotCard)
+		}
+		if spec == "chara_card_v3" {
+			return json.RawMessage(raw), nil
+		}
+	case "":
+		// V1 cards keep their fields at the top level.
+		if _, ok := top["name"]; !ok {
+			return nil, fmt.Errorf("%w: no spec and no name", ErrNotCard)
+		}
+		data = top
+	default:
+		return nil, fmt.Errorf("%w: unknown spec %q", ErrNotCard, spec)
+	}
+	if _, ok := data["group_only_greetings"]; !ok {
+		data["group_only_greetings"] = json.RawMessage("[]")
+	}
+	return json.Marshal(map[string]any{"spec": "chara_card_v3", "spec_version": "3.0", "data": data})
+}
+
+// toV2 returns a CCv3 card's data under the V2 spec. V2 apps ignore the
+// V3-only fields.
+func toV2(card json.RawMessage) ([]byte, error) {
+	var c struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(card, &c); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrNotCard, err)
+	}
+	return json.Marshal(map[string]any{"spec": "chara_card_v2", "spec_version": "2.0", "data": c.Data})
+}
+
+// asPNG returns avatar as a PNG, converting other image formats, or the
+// placeholder when avatar is empty.
+func asPNG(avatar []byte) ([]byte, error) {
+	if len(avatar) == 0 {
+		return placeholder()
+	}
+	if isPNG(avatar) {
+		return avatar, nil
+	}
+	img, _, err := image.Decode(bytes.NewReader(avatar))
+	if err != nil {
+		return nil, fmt.Errorf("read avatar: %w", err)
+	}
+	var buf bytes.Buffer
+	err = png.Encode(&buf, img)
+	return buf.Bytes(), err
+}
+
+func b64(b []byte) []byte { return []byte(base64.StdEncoding.EncodeToString(b)) }
+
+// unbase64 decodes a chunk's text, which some writers wrap or leave unpadded.
+func unbase64(text []byte) ([]byte, error) {
+	s := strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, string(text))
+	if b, err := base64.StdEncoding.DecodeString(s); err == nil {
+		return b, nil
+	}
+	return base64.RawStdEncoding.DecodeString(s)
+}

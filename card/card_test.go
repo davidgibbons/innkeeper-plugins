@@ -1,0 +1,192 @@
+package card
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"flag"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"image/png"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+)
+
+var update = flag.Bool("update", false, "rewrite testdata/*.want.json from the current output")
+
+// TestGolden decodes each card in testdata, compares it with
+// <file>.want.json, and checks it survives PNG and V2 JSON round trips.
+func TestGolden(t *testing.T) {
+	files, err := filepath.Glob("testdata/*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, f := range files {
+		if strings.HasSuffix(f, ".want.json") {
+			continue
+		}
+		n++
+		t.Run(filepath.Base(f), func(t *testing.T) {
+			in, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			card, img, err := Decode(in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if *update {
+				var buf bytes.Buffer
+				if err := json.Indent(&buf, card, "", "  "); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(f+".want.json", append(buf.Bytes(), '\n'), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			want, err := os.ReadFile(f + ".want.json")
+			if err != nil {
+				t.Fatalf("%v; run go test ./card -update and review the file", err)
+			}
+			if !sameJSON(t, card, want) {
+				t.Fatalf("decoded card differs from %s.want.json:\n%s", f, card)
+			}
+
+			out, ext, err := Encode(card, FormatPNG, img)
+			if err != nil || ext != "png" {
+				t.Fatalf("encode png: %v %q", err, ext)
+			}
+			card2, img2, err := Decode(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !sameJSON(t, card2, card) {
+				t.Fatalf("PNG round trip changed the card:\n%s", card2)
+			}
+			if img != nil && !bytes.Equal(img2, img) {
+				t.Fatal("PNG round trip changed the image")
+			}
+
+			out, ext, err = Encode(card, FormatJSONV2, nil)
+			if err != nil || ext != "json" {
+				t.Fatalf("encode json-v2: %v %q", err, ext)
+			}
+			// V2 JSON keeps only data. Writers like SillyTavern put extra fields at
+			// the top of a V3 card, and Decode adds group_only_greetings when missing.
+			if card2, _, err = Decode(out); err != nil || !sameJSON(t, dataOf(t, card2), dataOf(t, card)) {
+				t.Fatalf("V2 JSON round trip changed the card data: %v\n%s", err, card2)
+			}
+		})
+	}
+	if n < 4 {
+		t.Fatalf("found %d golden cards, want at least 4: V2 and V3, each as PNG and JSON", n)
+	}
+}
+
+func TestDecodeV1AndV2(t *testing.T) {
+	card, img, err := Decode([]byte(`{"name": "Old", "description": "A V1 card."}`))
+	if err != nil || img != nil {
+		t.Fatal(err, img)
+	}
+	want := `{"spec": "chara_card_v3", "spec_version": "3.0", "data": {"name": "Old", "description": "A V1 card.", "group_only_greetings": []}}`
+	if !sameJSON(t, card, []byte(want)) {
+		t.Fatalf("V1: %s", card)
+	}
+	card, _, err = Decode([]byte("\xef\xbb\xbf" + `{"spec": "chara_card_v2", "spec_version": "2.0", "data": {"name": "Two", "group_only_greetings": ["Hi."]}}`))
+	want = `{"spec": "chara_card_v3", "spec_version": "3.0", "data": {"name": "Two", "group_only_greetings": ["Hi."]}}`
+	if err != nil || !sameJSON(t, card, []byte(want)) {
+		t.Fatalf("V2: %v %s", err, card)
+	}
+}
+
+func TestDecodePrefersCCv3(t *testing.T) {
+	img, err := placeholder()
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunks, _ := readChunks(img)
+	v2 := b64([]byte(`{"spec": "chara_card_v2", "spec_version": "2.0", "data": {"name": "Old"}}`))
+	v3 := b64([]byte(`{"spec": "chara_card_v3", "spec_version": "3.0", "data": {"name": "New"}}`))
+	end := chunks[len(chunks)-1]
+	chunks = append(chunks[:len(chunks)-1], textChunk("ccv3", v3), textChunk("chara", v2), end)
+	card, got, err := Decode(writeChunks(chunks))
+	if err != nil || !strings.Contains(string(card), `"New"`) {
+		t.Fatalf("%v %s", err, card)
+	}
+	if !bytes.Equal(got, img) {
+		t.Fatal("card chunks left in the image")
+	}
+}
+
+func TestDecodeRejects(t *testing.T) {
+	img, err := placeholder()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, in := range map[string][]byte{
+		"text":         []byte("hello"),
+		"unknown spec": []byte(`{"spec": "chara_card_v9", "data": {}}`),
+		"no name":      []byte(`{"foo": 1}`),
+		"V2 no data":   []byte(`{"spec": "chara_card_v2"}`),
+		"plain PNG":    img,
+	} {
+		if _, _, err := Decode(in); !errors.Is(err, ErrNotCard) {
+			t.Errorf("%s: err = %v, want ErrNotCard", name, err)
+		}
+	}
+}
+
+func TestEncodeConvertsAvatar(t *testing.T) {
+	src := image.NewRGBA(image.Rect(0, 0, 4, 6))
+	src.Set(1, 1, color.RGBA{R: 255, A: 255})
+	var jpg bytes.Buffer
+	if err := jpeg.Encode(&jpg, src, nil); err != nil {
+		t.Fatal(err)
+	}
+	card := []byte(`{"spec": "chara_card_v3", "spec_version": "3.0", "data": {"name": "Brakka"}}`)
+	out, _, err := Encode(card, FormatPNG, jpg.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := png.DecodeConfig(bytes.NewReader(out))
+	if err != nil || cfg.Width != 4 || cfg.Height != 6 {
+		t.Fatalf("output %v %+v, want a 4x6 PNG", err, cfg)
+	}
+	if _, _, err := Encode(card, "gif", nil); !errors.Is(err, ErrUnknownFormat) {
+		t.Fatalf("unknown format: %v", err)
+	}
+}
+
+func sameJSON(t *testing.T, a, b []byte) bool {
+	t.Helper()
+	var x, y any
+	if err := json.Unmarshal(a, &x); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &y); err != nil {
+		t.Fatal(err)
+	}
+	return reflect.DeepEqual(x, y)
+}
+
+// dataOf returns a card's data with group_only_greetings defaulted to [].
+func dataOf(t *testing.T, card []byte) []byte {
+	t.Helper()
+	var c struct{ Data map[string]json.RawMessage }
+	if err := json.Unmarshal(card, &c); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := c.Data["group_only_greetings"]; !ok {
+		c.Data["group_only_greetings"] = json.RawMessage("[]")
+	}
+	b, err := json.Marshal(c.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
