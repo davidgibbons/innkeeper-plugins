@@ -7,6 +7,7 @@ import (
 	"flag"
 	"image"
 	"image/color"
+	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"os"
@@ -102,6 +103,11 @@ func TestDecodeV1AndV2(t *testing.T) {
 	if err != nil || !sameJSON(t, card, []byte(want)) {
 		t.Fatalf("V2: %v %s", err, card)
 	}
+	card, _, err = Decode([]byte(`{"spec": "chara_card_v2", "spec_version": "2.0", "data": {"name": "Two", "group_only_greetings": null}}`))
+	want = `{"spec": "chara_card_v3", "spec_version": "3.0", "data": {"name": "Two", "group_only_greetings": []}}`
+	if err != nil || !sameJSON(t, card, []byte(want)) {
+		t.Fatalf("V2 null greetings: %v %s", err, card)
+	}
 }
 
 func TestDecodePrefersCCv3(t *testing.T) {
@@ -189,4 +195,48 @@ func dataOf(t *testing.T, card []byte) []byte {
 		t.Fatal(err)
 	}
 	return b
+}
+
+func TestEncodeRejectsHugeAvatar(t *testing.T) {
+	var g bytes.Buffer
+	if err := gif.Encode(&g, image.NewPaletted(image.Rect(0, 0, 1, 1), color.Palette{color.Black, color.White}), nil); err != nil {
+		t.Fatal(err)
+	}
+	b := g.Bytes()
+	b[6], b[7], b[8], b[9] = 0x20, 0x4e, 0x20, 0x4e // 20000 x 20000
+	card := []byte(`{"spec": "chara_card_v3", "spec_version": "3.0", "data": {"name": "Big"}}`)
+	if _, _, err := Encode(card, FormatPNG, b); err == nil {
+		t.Fatal("no error for a 20000x20000 GIF")
+	}
+	// A PNG header claiming 20000x20000.
+	img, err := placeholder()
+	if err != nil {
+		t.Fatal(err)
+	}
+	img = append([]byte(nil), img...)
+	copy(img[16:24], []byte{0, 0, 0x4e, 0x20, 0, 0, 0x4e, 0x20})
+	if _, _, err := Encode(card, FormatPNG, img); err == nil {
+		t.Fatal("no error for a 20000x20000 PNG")
+	}
+}
+
+func FuzzDecode(f *testing.F) {
+	files, _ := filepath.Glob("testdata/*")
+	for _, name := range files {
+		if b, err := os.ReadFile(name); err == nil && !strings.HasSuffix(name, ".want.json") {
+			f.Add(b)
+		}
+	}
+	for _, s := range []string{"", "{}", `{"name": "x"}`, `{"spec": "chara_card_v2", "data": {}}`, "\x89PNG\r\n\x1a\n"} {
+		f.Add([]byte(s))
+	}
+	f.Fuzz(func(t *testing.T, in []byte) {
+		card, img, err := Decode(in)
+		if err != nil {
+			return
+		}
+		for _, format := range []string{FormatPNG, FormatJSONV2} {
+			Encode(card, format, img)
+		}
+	})
 }
