@@ -43,6 +43,7 @@ const (
 
 // Decode reads a card file. It returns the card as CCv3 JSON and, for a PNG,
 // the image without its card chunks. A CCv3 card comes back unchanged.
+// Every error wraps ErrNotCard. img is nil for JSON input.
 func Decode(b []byte) (card json.RawMessage, img []byte, err error) {
 	if !isPNG(b) {
 		card, err = toV3(b)
@@ -139,9 +140,10 @@ func toV3(raw []byte) (json.RawMessage, error) {
 			return json.RawMessage(raw), nil
 		}
 	case "":
-		// V1 cards keep their fields at the top level.
-		if _, ok := top["name"]; !ok {
-			return nil, fmt.Errorf("%w: no spec and no name", ErrNotCard)
+		// V1 cards keep their fields at the top level. Requiring a content field
+		// keeps app presets and other JSON with a name from passing as cards.
+		if !isV1(top) {
+			return nil, fmt.Errorf("%w: no spec, and not a V1 card", ErrNotCard)
 		}
 		data = top
 	default:
@@ -151,6 +153,19 @@ func toV3(raw []byte) (json.RawMessage, error) {
 		data["group_only_greetings"] = json.RawMessage("[]")
 	}
 	return json.Marshal(map[string]any{"spec": "chara_card_v3", "spec_version": "3.0", "data": data})
+}
+
+// isV1 reports whether top has a name and at least one content field.
+func isV1(top map[string]json.RawMessage) bool {
+	if _, ok := top["name"]; !ok {
+		return false
+	}
+	for _, k := range []string{"description", "personality", "first_mes", "scenario"} {
+		if _, ok := top[k]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // toV2 returns a CCv3 card's data under the V2 spec. V2 apps ignore the
