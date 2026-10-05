@@ -253,16 +253,41 @@ func summaryOf(file string, c map[string]any) map[string]any {
 			"extensions": map[string]any{"fav": ext["fav"], "world": ext["world"]}}}
 }
 
-// character is /get's reply: the stored card, the file name, and the stored JSON.
+// character is /get's reply: the stored card converted to V2, the file
+// name, and the stored JSON.
 func character(file string, c map[string]any) map[string]any {
 	raw, _ := json.Marshal(c)
 	out := map[string]any{}
 	for k, v := range c {
 		out[k] = v
 	}
+	if _, ok := c["data"].(map[string]any); !ok {
+		convertToV2(out)
+	}
 	out["avatar"] = file
 	out["json_data"] = string(raw)
 	return out
+}
+
+// convertToV2 fills a V1 card's data as charaFormatData does.
+func convertToV2(c map[string]any) {
+	str := func(k string) any {
+		if s, ok := c[k].(string); ok {
+			return s
+		}
+		return ""
+	}
+	tags, _ := c["tags"].([]any)
+	if tags == nil {
+		tags = []any{}
+	}
+	c["spec"], c["spec_version"], c["tags"] = "chara_card_v2", "2.0", tags
+	c["data"] = map[string]any{"name": c["name"], "description": str("description"), "personality": str("personality"),
+		"scenario": str("scenario"), "first_mes": str("first_mes"), "mes_example": str("mes_example"),
+		"creator_notes": str("creatorcomment"), "system_prompt": "", "post_history_instructions": "", "tags": tags,
+		"creator": str("creator"), "character_version": "", "alternate_greetings": []any{},
+		"extensions": map[string]any{"talkativeness": 0.5, "fav": false, "world": "",
+			"depth_prompt": map[string]any{"prompt": "", "depth": 4, "role": "system"}}}
 }
 
 func (f *fake) sortedFiles() []string {

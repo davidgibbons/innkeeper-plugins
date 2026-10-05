@@ -84,15 +84,19 @@ func (p *plugin) put(ctx context.Context, params json.RawMessage) (any, error) {
 
 // read returns character id as SillyTavern stores it.
 func (p *plugin) read(ctx context.Context, id string) (map[string]any, error) {
-	var r struct {
-		JSONData string `json:"json_data"`
-	}
+	var r map[string]any
 	if err := p.c.call(ctx, "/api/characters/get", map[string]any{"avatar_url": id}, &r); err != nil {
 		return nil, err
 	}
+	raw, _ := r["json_data"].(string)
 	var c map[string]any
-	if err := json.Unmarshal([]byte(r.JSONData), &c); err != nil {
+	if err := json.Unmarshal([]byte(raw), &c); err != nil {
 		return nil, protocol.NewError(-32000, id+": unreadable card: "+err.Error(), false)
+	}
+	// A V1 card has no data; the reply around json_data is it converted to V2.
+	if _, ok := c["data"].(map[string]any); !ok {
+		delete(r, "json_data")
+		return r, nil
 	}
 	return c, nil
 }

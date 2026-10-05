@@ -214,6 +214,29 @@ func TestTwoLorebooksFailWithoutWriting(t *testing.T) {
 	}
 }
 
+// A PNG dropped into SillyTavern's folder may hold a V1 card, with no data.
+func TestGetAV1Character(t *testing.T) {
+	f := newFake(t)
+	f.characters["Old.png"] = map[string]any{"name": "Old", "description": "An old card.", "first_mes": "Hi.",
+		"creatorcomment": "Notes."}
+	res, err := newPlugin(f).get(context.Background(), mustJSON(t, protocol.TargetGetParams{RemoteID: "Old.png"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Spec string         `json:"spec"`
+		Data map[string]any `json:"data"`
+	}
+	_ = json.Unmarshal(res.(protocol.TargetGetResult).Card, &got)
+	if got.Spec != "chara_card_v3" || got.Data["name"] != "Old" || got.Data["description"] != "An old card." ||
+		got.Data["first_mes"] != "Hi." || got.Data["creator_notes"] != "Notes." {
+		t.Fatalf("card = %+v", got)
+	}
+	if ext := object(got.Data["extensions"]); ext["world"] != nil || ext["fav"] != nil {
+		t.Fatalf("extensions = %v", ext)
+	}
+}
+
 func TestGetCharacter(t *testing.T) {
 	f := newFake(t)
 	p := newPlugin(f)
