@@ -1,0 +1,20 @@
+name = "lumiverse"
+version = "0.1.0"
+protocol = 1
+command = ["./lumiverse"]
+capabilities = ["push", "pull"]
+secrets = ["password"]
+
+[config]
+type = "object"
+required = ["url", "username"]
+
+[config.properties.url]
+type = "string"
+title = "Server URL"
+description = "The Lumiverse server, such as https://lumiverse.example.com"
+
+[config.properties.username]
+type = "string"
+title = "Username or email"
+description = "The Lumiverse account the cards go to. An address with @ signs in by email."
