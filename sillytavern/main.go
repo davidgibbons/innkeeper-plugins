@@ -16,7 +16,10 @@ import (
 
 const version = "0.1.0"
 
-type plugin struct{ c *client }
+type plugin struct {
+	c       *client
+	blobTmp string
+}
 
 // describe says what SillyTavern stores. It needs no server.
 func describe() protocol.TargetInfo {
@@ -41,7 +44,7 @@ func main() {
 			url, _ := p.Config["url"].(string)
 			auth, _ := p.Config["auth"].(string)
 			username, _ := p.Config["username"].(string)
-			cur.Store(&plugin{newClient(url, auth, username, p.Secrets["password"])})
+			cur.Store(&plugin{newClient(url, auth, username, p.Secrets["password"]), p.BlobTmp})
 			return protocol.InitializeResult{Protocol: protocol.Version, Name: "sillytavern", Version: version,
 				Capabilities: []string{"push", "pull"}}, nil
 		case protocol.MethodShutdown:

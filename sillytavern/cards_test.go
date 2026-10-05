@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -16,7 +18,7 @@ import (
 	"github.com/davidgibbons/innkeeper/protocol"
 )
 
-func newPlugin(f *fake) *plugin { return &plugin{newTestClient(f, "account")} }
+func newPlugin(f *fake) *plugin { return &plugin{c: newTestClient(f, "account")} }
 
 func mustJSON(t *testing.T, v any) json.RawMessage {
 	t.Helper()
@@ -235,6 +237,25 @@ func TestGetAV1Character(t *testing.T) {
 	if ext := object(got.Data["extensions"]); ext["world"] != nil || ext["fav"] != nil {
 		t.Fatalf("extensions = %v", ext)
 	}
+	if links := res.(protocol.TargetGetResult).LorebookRemoteIDs; links == nil || len(links) != 0 {
+		t.Fatalf("lorebooks = %#v, want []", links)
+	}
+}
+
+func TestGetAvatar(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(f)
+	p.blobTmp = t.TempDir()
+	id := put(t, p, protocol.TargetPutParams{Card: testCard(nil), Key: "k", Avatar: avatarFile(t, "abc")})
+	res, err := p.get(context.Background(), mustJSON(t, protocol.TargetGetParams{RemoteID: id, Avatar: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := res.(protocol.TargetGetResult).Avatar
+	img, err := os.ReadFile(path)
+	if filepath.Dir(path) != p.blobTmp || err != nil || !bytes.Equal(img, f.images[id]) {
+		t.Fatalf("avatar %q: %v", path, err)
+	}
 }
 
 func TestGetCharacter(t *testing.T) {
@@ -259,6 +280,9 @@ func TestGetCharacter(t *testing.T) {
 	}
 	if fmt.Sprint(got.Data["extensions"]) != "map[depth_prompt:map[depth:4 prompt:Grumble.]]" {
 		t.Fatalf("extensions = %v", got.Data["extensions"])
+	}
+	if r := res.(protocol.TargetGetResult); !slices.Equal(r.LorebookRemoteIDs, []string{"Dwarves"}) || r.Avatar != "" {
+		t.Fatalf("lorebooks = %v, avatar = %q", r.LorebookRemoteIDs, r.Avatar)
 	}
 	if _, err := p.get(context.Background(), mustJSON(t, protocol.TargetGetParams{RemoteID: "Gone.png"})); !notFound(err) {
 		t.Fatalf("get of a missing character: %v", err)

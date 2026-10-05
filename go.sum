@@ -5,8 +5,8 @@ github.com/danielgtaylor/huma/v2 v2.39.1/go.mod h1:zcnQ38duIJ3VUHwFaBoZ6x8T+KN/m
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/davidgibbons/innkeeper v0.0.0-20261005155746-d6a8efc3b48e h1:QPvTznqEJsAVb61gMpc0YFB2NQhPcCXNH76IyILg4F4=
-github.com/davidgibbons/innkeeper v0.0.0-20261005155746-d6a8efc3b48e/go.mod h1:q8VBI+bV6ITTnB8vKEiWmlw1jfemjhR4H1V/pmoHWVc=
+github.com/davidgibbons/innkeeper v0.2.1-0.20261005222742-3f6402ac93b9 h1:BU7y+f1J8MScsXqEC90D/dG5siL2P2HAMbXI5qXTcjQ=
+github.com/davidgibbons/innkeeper v0.2.1-0.20261005222742-3f6402ac93b9/go.mod h1:q8VBI+bV6ITTnB8vKEiWmlw1jfemjhR4H1V/pmoHWVc=
 github.com/fxamacker/cbor/v2 v2.9.2 h1:X4Ksno9+x3cz0TZv69ec1hxP/+tymuR8PXQJyDwfh78=
 github.com/fxamacker/cbor/v2 v2.9.2/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
 github.com/go-chi/chi/v5 v5.3.1 h1:3j4HZLGZQ3JpMCrPJF/Jl3mYJfWLKBfNJ6quurUGCf8=

@@ -48,6 +48,8 @@ or secrets.
   A push links the character to its pushed lorebook, or clears the link when
   the card has none, so a world set in SillyTavern is replaced.
   Character filters on world info entries don't sync.
+- Importing from SillyTavern takes each character's image and its world
+  link, so imported cards keep both.
 
 The plugin keeps its own keys in `extensions.innkeeper` on characters, world
 files, and entries. Leave them alone. SillyTavern's "Duplicate" copies them, so
