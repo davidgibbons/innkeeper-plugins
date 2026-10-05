@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/davidgibbons/innkeeper/protocol"
@@ -232,13 +233,27 @@ func TestListLorebooks(t *testing.T) {
 	}
 }
 
+// Cases checked against sanitize-filename 1.6.3 and Node's path.parse.
 func TestFileIDIsSillyTavernsFileName(t *testing.T) {
 	for name, want := range map[string]string{"Forge lore": "Forge lore", `A/B:C*?"<>|\`: "ABC",
-		"bell\x07": "bell", "con": "", "LPT1": "", "con 2": "con 2"} {
+		"bell\x07": "bell", "x\u0085y": "xy", "con": "", "LPT1": "", "con 2": "con 2", "con.a\u2028b": "con.a\u2028b",
+		"..": "..", "???": "", " x ": " x ", "Foo.": "Foo.", strings.Repeat("a", 251): ""} {
 		if got := fileID(name); got != want {
 			t.Errorf("fileID(%q) = %q, want %q", name, got, want)
 		}
 	}
+}
+
+// The remote ID is the file /list shows, not the name the plugin asked for.
+func TestCreateTakesTheIDFromTheList(t *testing.T) {
+	f := newFake(t)
+	f.editFile = strings.ToLower
+	if id := putBook(t, newPlugin(f), "k", testBook("Forge lore")); id != "forge lore" {
+		t.Fatalf("created %q, want forge lore", id)
+	}
+	f.editFile = func(string) string { return "" }
+	_, err := putBookErr(newPlugin(f), protocol.TargetPutLorebookParams{Key: "k2", Lorebook: mustJSON(t, testBook("Smithy"))})
+	retryable(t, err)
 }
 
 func TestAnEntryWithoutEnabledIsPushedEnabled(t *testing.T) {

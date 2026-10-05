@@ -101,7 +101,10 @@ func (p *plugin) putLorebook(ctx context.Context, params json.RawMessage) (any, 
 		if i < 0 {
 			return nil, missingWorld(id)
 		}
-		return p.writeWorld(ctx, id, book, cmp.Or(key, files[i].key()))
+		if err := p.writeWorld(ctx, id, book, cmp.Or(key, files[i].key())); err != nil {
+			return nil, err
+		}
+		return protocol.TargetPutResult{RemoteID: id}, nil
 	}
 	// ponytail: covers one plugin process; two workers creating same-named
 	// books at once can still pick one file. Needs a lock in SillyTavern.
@@ -111,8 +114,20 @@ func (p *plugin) putLorebook(ctx context.Context, params json.RawMessage) (any, 
 		return nil, err
 	}
 	name, _ := book["name"].(string)
-	id = freeName(files, name)
-	return p.writeWorld(ctx, id, book, key)
+	want := freeName(files, name)
+	if err := p.writeWorld(ctx, want, book, key); err != nil {
+		return nil, err
+	}
+	// The file SillyTavern wrote is the ID, whatever fileID predicted.
+	if files, err = p.worldFiles(ctx); err != nil {
+		return nil, err
+	}
+	for _, f := range files {
+		if key != "" && f.key() == key || key == "" && f.FileID == want {
+			return protocol.TargetPutResult{RemoteID: f.FileID}, nil
+		}
+	}
+	return nil, protocol.NewError(-32000, fmt.Sprintf("SillyTavern's world file list doesn't show the new file %q", want), true)
 }
 
 // key is the sync key of the push that created the file, or "".
@@ -133,7 +148,7 @@ func (p *plugin) worldFiles(ctx context.Context) ([]worldFile, error) {
 
 // writeWorld replaces world file id with book in one write, so a failure
 // leaves the old file.
-func (p *plugin) writeWorld(ctx context.Context, id string, book map[string]any, key string) (any, error) {
+func (p *plugin) writeWorld(ctx context.Context, id string, book map[string]any, key string) error {
 	stash := map[string]any{}
 	if key != "" {
 		stash["sync_key"] = key
@@ -152,10 +167,7 @@ func (p *plugin) writeWorld(ctx context.Context, id string, book map[string]any,
 	if name, _ := book["name"].(string); name != "" {
 		data["name"] = name
 	}
-	if err := p.c.call(ctx, "/api/worldinfo/edit", map[string]any{"name": id, "data": data}, nil); err != nil {
-		return nil, err
-	}
-	return protocol.TargetPutResult{RemoteID: id}, nil
+	return p.c.call(ctx, "/api/worldinfo/edit", map[string]any{"name": id, "data": data}, nil)
 }
 
 // freeName returns the file ID for a new world file named name, one that no
@@ -186,13 +198,13 @@ func truncate(s string, n int) string {
 	return s
 }
 
-var (
-	reservedName = regexp.MustCompile(`^\.+$|(?i)^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$`)
-	trailing     = regexp.MustCompile(`[. ]+$`)
-)
+// reservedName is sanitize-filename's Windows names. JavaScript's "." skips
+// line terminators.
+var reservedName = regexp.MustCompile(`(?i)^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\.[^\n\r\x{2028}\x{2029}]*)?$`)
 
-// fileID is the file ID SillyTavern gives a world file named name: the
-// sanitize-filename package's sanitize(name + ".json"), without ".json".
+// fileID is the file ID SillyTavern's /list gives a world file named name:
+// sanitize-filename 1.6.3's sanitize(name + ".json"), without ".json", or ""
+// for a name whose file /list skips or that can't be written.
 func fileID(name string) string {
 	s := strings.Map(func(r rune) rune {
 		if strings.ContainsRune(`/?<>\:*|"`, r) || r < 0x20 || r >= 0x80 && r <= 0x9f {
@@ -203,7 +215,11 @@ func fileID(name string) string {
 	if reservedName.MatchString(s) {
 		s = ""
 	}
-	return strings.TrimSuffix(trailing.ReplaceAllString(s, ""), ".json")
+	// /list skips a file without the extension, and path.parse(".json") has none.
+	if s = truncate(s, 255); s == ".json" || !strings.HasSuffix(s, ".json") {
+		return ""
+	}
+	return strings.TrimSuffix(s, ".json")
 }
 
 // toWorldEntry is convertCharacterBook's entry, with only the settings the

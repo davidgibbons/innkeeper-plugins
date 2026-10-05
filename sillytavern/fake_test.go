@@ -38,6 +38,9 @@ type fake struct {
 	deny      bool // answer every private route with 403, as a disabled account would
 	failWith  int  // answer every private route with this status
 	badImport bool // answer /import with {error: true}
+	// editFile, when set, is the file ID /edit writes for a name, as a
+	// case-insensitive file system might choose; "" stores nothing.
+	editFile func(name string) string
 
 	// What the server saw.
 	requests      int
@@ -473,7 +476,12 @@ func (f *fake) worldEdit(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	f.worlds[name] = data
+	if f.editFile != nil {
+		name = f.editFile(name)
+	}
+	if name != "" {
+		f.worlds[name] = data
+	}
 	reply(w, 200, map[string]any{"ok": true})
 }
 
