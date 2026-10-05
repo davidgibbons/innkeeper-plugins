@@ -18,6 +18,9 @@ Either:
 - add Innkeeper's address to `whitelist` in SillyTavern's `config.yaml`, or
 - set `whitelistMode: false` and turn on basic auth or accounts.
 
+Behind a proxy that sets `X-Forwarded-For`, that address must be in
+`whitelist` too, unless you turn off `enableForwardedWhitelist`.
+
 ## Auth modes
 
 Set `auth` to match the server. `username` is required unless `auth` is
@@ -45,9 +48,10 @@ or secrets.
   Character filters on world info entries don't sync.
 
 The plugin keeps its own keys in `extensions.innkeeper` on characters, world
-files, and entries. Leave them alone. SillyTavern's "Duplicate" copies them,
-so delete the copy's `innkeeper` extension, or the two share a key and an
-entry id.
+files, and entries. Leave them alone. SillyTavern's "Duplicate" copies them, so
+the two copies share a key and a later push may update either one. Don't
+duplicate a pushed character in SillyTavern; push a new copy from Innkeeper
+instead.
 
 Renaming a character in SillyTavern changes its file name, so the next push
 makes a new copy.
@@ -56,4 +60,6 @@ An open SillyTavern tab keeps its own copy of a character or world file, and
 its next save overwrites a push. Reload the tab after pushing. Drift checks
 show such overwrites as changes.
 
-Point only one Innkeeper at a SillyTavern user.
+Point only one Innkeeper at a SillyTavern user. The plugin finds its earlier
+copies by keys that are unique only within one Innkeeper, so a second one
+could take over the first's characters and world files.
