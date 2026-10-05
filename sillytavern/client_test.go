@@ -285,3 +285,14 @@ func TestErrors(t *testing.T) {
 	f.srv.Close()
 	retryable(t, list(c))
 }
+
+func TestAnOversizedReplyIsFinal(t *testing.T) {
+	defer func(n int64) { maxReply = n }(maxReply)
+	maxReply = 4
+	f := newFake(t)
+	f.worlds["Dwarves"] = map[string]any{"entries": map[string]any{}}
+	pe := final(t, newTestClient(f, "account").call(context.Background(), "/api/worldinfo/list", map[string]any{}, &[]any{}))
+	if !strings.Contains(pe.Message, "over") {
+		t.Fatalf("error %q should say the reply is too big", pe.Message)
+	}
+}

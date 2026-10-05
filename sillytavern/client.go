@@ -146,11 +146,17 @@ func (c *client) send(ctx context.Context, s *session, r request) (*http.Respons
 	return resp, nil
 }
 
+// maxReply caps a reply's size; a variable so tests can lower it.
+var maxReply int64 = 64 << 20
+
 // decode maps a reply's status to a protocol error, or decodes its body.
 func decode(resp *http.Response, what string, out any) error {
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxReply+1))
 	if err != nil {
 		return protocol.NewError(-32000, what+": "+err.Error(), true)
+	}
+	if int64(len(body)) > maxReply {
+		return protocol.NewError(-32000, fmt.Sprintf("%s: reply over %d MiB", what, maxReply>>20), false)
 	}
 	switch {
 	case resp.StatusCode == http.StatusNotFound:
