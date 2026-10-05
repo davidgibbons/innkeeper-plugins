@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"image/png"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -32,8 +33,8 @@ func TestLive(t *testing.T) {
 		t.Skip("set SILLYTAVERN_URL, and SILLYTAVERN_AUTH, SILLYTAVERN_USERNAME, SILLYTAVERN_PASSWORD")
 	}
 	ctx := context.Background()
-	p := &plugin{newClient(base, cmp.Or(os.Getenv("SILLYTAVERN_AUTH"), "none"),
-		os.Getenv("SILLYTAVERN_USERNAME"), os.Getenv("SILLYTAVERN_PASSWORD"))}
+	p := &plugin{c: newClient(base, cmp.Or(os.Getenv("SILLYTAVERN_AUTH"), "none"),
+		os.Getenv("SILLYTAVERN_USERNAME"), os.Getenv("SILLYTAVERN_PASSWORD")), blobTmp: t.TempDir()}
 	stamp := time.Now().Format("20060102-150405.000")
 	name := "Innkeeper Live Test " + stamp
 
@@ -109,6 +110,24 @@ func TestLive(t *testing.T) {
 		t.Errorf("card re-run with the key made %s, want %s", again, id)
 	}
 	check("after update")
+
+	// An import reads the image and the world link too.
+	res, err := p.get(ctx, mustJSON(t, protocol.TargetGetParams{RemoteID: id, Avatar: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := res.(protocol.TargetGetResult)
+	if !slices.Equal(got.LorebookRemoteIDs, []string{bookID}) {
+		t.Errorf("lorebook links = %v, want [%s]", got.LorebookRemoteIDs, bookID)
+	}
+	if f, err := os.Open(got.Avatar); err != nil {
+		t.Errorf("avatar: %v", err)
+	} else {
+		if _, err := png.DecodeConfig(f); err != nil {
+			t.Errorf("avatar isn't a PNG: %v", err)
+		}
+		f.Close()
+	}
 
 	chars, err := p.list(ctx)
 	if err != nil {

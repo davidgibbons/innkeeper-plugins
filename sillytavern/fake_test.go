@@ -79,6 +79,7 @@ func newFake(t *testing.T) *fake {
 		"/api/characters/import":           f.charactersImport,
 		"/api/characters/merge-attributes": f.charactersMerge,
 		"/api/characters/edit-avatar":      f.charactersEditAvatar,
+		"/api/characters/export":           f.charactersExport,
 		"/api/worldinfo/list":              f.worldList,
 		"/api/worldinfo/get":               f.worldGet,
 		"/api/worldinfo/edit":              f.worldEdit,
@@ -459,6 +460,23 @@ func (f *fake) charactersEditAvatar(w http.ResponseWriter, r *http.Request) {
 	f.images[fields["avatar_url"]] = file
 	f.avatars[fields["avatar_url"]]++
 	w.WriteHeader(http.StatusOK)
+}
+
+// charactersExport answers format png with the stored image. SillyTavern
+// also clears private fields in its card chunk, which the plugin ignores.
+func (f *fake) charactersExport(w http.ResponseWriter, r *http.Request) {
+	b := body(r)
+	file, _ := b["avatar_url"].(string)
+	img, ok := f.images[file]
+	switch {
+	case b["format"] != "png":
+		w.WriteHeader(http.StatusBadRequest)
+	case !ok:
+		w.WriteHeader(http.StatusNotFound)
+	default:
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(img)
+	}
 }
 
 func (f *fake) worldList(w http.ResponseWriter, r *http.Request) {
