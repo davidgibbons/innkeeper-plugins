@@ -30,7 +30,8 @@ type fake struct {
 	handle       string
 	password     string
 	csrfDisabled bool
-	lazy         bool // performance.lazyLoadCharacters
+	lazy         bool   // performance.lazyLoadCharacters
+	csrfBody     string // when set, /csrf-token answers 200 with this body, as a proxy might
 
 	// Test hooks.
 	deny     bool // answer every private route with 403, as a disabled account would
@@ -191,6 +192,10 @@ func (f *fake) login(w http.ResponseWriter, r *http.Request) {
 
 func (f *fake) csrfToken(w http.ResponseWriter, r *http.Request) {
 	f.csrfTokens++
+	if f.csrfBody != "" {
+		_, _ = io.WriteString(w, f.csrfBody)
+		return
+	}
 	s := sessionOf(r)
 	if f.csrfDisabled {
 		reply(w, 200, map[string]any{"token": "disabled"})

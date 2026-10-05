@@ -100,6 +100,7 @@ func (c *client) do(ctx context.Context, r request, out any) error {
 	defer resp.Body.Close()
 	what := r.method + " " + r.path
 	if resp.StatusCode == http.StatusForbidden {
+		c.drop(sess)
 		return protocol.NewError(-32000, what+": SillyTavern answered 403 on a fresh login. Either its whitelist "+
 			"doesn't include this server's address, it refused the CSRF token, or the account is disabled", false)
 	}
@@ -169,6 +170,9 @@ func (c *client) session(ctx context.Context, stale *session) (s *session, fresh
 	if c.sess != nil && c.sess != stale {
 		return c.sess, false, nil
 	}
+	if c.auth != "none" && c.auth != "basic" && c.auth != "account" {
+		return nil, false, protocol.NewError(protocol.CodeInvalidParams, fmt.Sprintf("auth is %q, want none, basic, or account", c.auth), false)
+	}
 	if c.base == "" || c.auth != "none" && (c.username == "" || c.password == "") {
 		return nil, false, protocol.NewError(-32000, "set the instance's url and username config and its password secret", false)
 	}
@@ -178,39 +182,60 @@ func (c *client) session(ctx context.Context, stale *session) (s *session, fresh
 	}
 	s = &session{http: &http.Client{Jar: jar, Timeout: time.Minute}}
 	if err := c.login(ctx, s); err != nil {
-		var pe *protocol.Error
-		if errors.As(err, &pe) && pe.Retryable() {
-			return nil, false, err
+		var rej *rejection
+		if errors.As(err, &rej) {
+			c.failed = protocol.NewError(-32000, rej.Error()+". Fix it in the instance's config or secrets, which restarts the plugin.", false)
+			return nil, false, c.failed
 		}
-		c.failed = protocol.NewError(-32000, "SillyTavern rejected the login; fix the username or password, "+
-			"or add this server's address to SillyTavern's whitelist, which restarts the plugin. "+err.Error(), false)
-		return nil, false, c.failed
+		return nil, false, err
 	}
 	c.sess = s
 	return s, true, nil
+}
+
+// rejection is the server's refusal of the login itself. Retrying risks its
+// lockout, so only this latches the client.
+type rejection struct {
+	status int
+	step   string
+	body   string
+}
+
+func (e *rejection) Error() string {
+	switch {
+	case e.status == http.StatusUnauthorized:
+		return "SillyTavern rejected the username or password at " + e.step
+	case e.step == "POST /api/users/login":
+		return "SillyTavern rejected the account login: " + e.body
+	}
+	return "SillyTavern answered 403 at " + e.step + ", so this server's address is probably not in its whitelist"
 }
 
 // login makes s a session SillyTavern accepts. For basic auth, GET /login
 // binds the session to the account when accounts are on. The CSRF token comes
 // first for an account login, which is itself a POST.
 func (c *client) login(ctx context.Context, s *session) error {
-	get := func(path string, out any) error {
-		resp, err := c.send(ctx, s, request{method: http.MethodGet, path: path})
+	step := func(r request, out any) error {
+		resp, err := c.send(ctx, s, r)
 		if err != nil {
 			return err
 		}
 		defer resp.Body.Close()
-		return decode(resp, "login: GET "+path, out)
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			return &rejection{resp.StatusCode, r.method + " " + r.path, snippet(b)}
+		}
+		return decode(resp, "login: "+r.method+" "+r.path, out)
 	}
 	if c.auth == "basic" {
-		if err := get("/login", nil); err != nil {
+		if err := step(request{method: http.MethodGet, path: "/login"}, nil); err != nil {
 			return err
 		}
 	}
 	var tok struct {
 		Token string `json:"token"`
 	}
-	if err := get("/csrf-token", &tok); err != nil {
+	if err := step(request{method: http.MethodGet, path: "/csrf-token"}, &tok); err != nil {
 		return err
 	}
 	s.csrf = tok.Token
@@ -218,12 +243,16 @@ func (c *client) login(ctx context.Context, s *session) error {
 		return nil
 	}
 	raw, _ := json.Marshal(map[string]string{"handle": c.username, "password": c.password})
-	resp, err := c.send(ctx, s, request{method: http.MethodPost, path: "/api/users/login", body: raw, contentType: "application/json"})
-	if err != nil {
-		return err
+	return step(request{method: http.MethodPost, path: "/api/users/login", body: raw, contentType: "application/json"}, nil)
+}
+
+// drop forgets s, unless another call has already replaced it.
+func (c *client) drop(s *session) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.sess == s {
+		c.sess = nil
 	}
-	defer resp.Body.Close()
-	return decode(resp, "login: POST /api/users/login", nil)
 }
 
 func notFound(err error) bool {

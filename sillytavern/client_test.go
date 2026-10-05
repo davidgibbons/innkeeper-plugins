@@ -111,32 +111,68 @@ func TestASecond403IsFinalAndNamesTheWhitelist(t *testing.T) {
 }
 
 func TestStopsAfterARejectedLogin(t *testing.T) {
-	cases := map[string]func(*fake){
-		"wrong account password": func(f *fake) { f.password = "other" },
-		"wrong basic password":   func(f *fake) { f.basicPass = "other" },
-		"address not whitelisted": func(f *fake) {
-			f.refuse = true
-		},
+	cases := []struct {
+		name, auth, want string
+		spoil            func(*fake)
+	}{
+		{"wrong account password", "account", "Incorrect credentials", func(f *fake) { f.password = "other" }},
+		{"wrong basic password", "basic", "username or password", func(f *fake) { f.basicPass = "other" }},
+		{"address not whitelisted", "account", "whitelist", func(f *fake) { f.refuse = true }},
 	}
-	for name, spoil := range cases {
-		t.Run(name, func(t *testing.T) {
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
 			f := newFake(t)
-			auth := "account"
-			if strings.Contains(name, "basic") {
-				auth = "basic"
-			}
-			c := newTestClient(f, auth)
-			spoil(f)
-			final(t, list(c))
-			sent := f.requests
+			c := newTestClient(f, tc.auth)
+			tc.spoil(f)
 			pe := final(t, list(c))
+			if !strings.Contains(pe.Message, tc.want) {
+				t.Fatalf("error %q should say %q", pe.Message, tc.want)
+			}
+			if tc.want != "whitelist" && strings.Contains(pe.Message, "whitelist") {
+				t.Fatalf("error %q names the whitelist, which isn't a possible cause here", pe.Message)
+			}
+			sent := f.requests
+			final(t, list(c))
 			if f.requests != sent || f.logins != 0 {
 				t.Fatalf("sent %d more requests after the rejection", f.requests-sent)
 			}
-			if !strings.Contains(pe.Message, "whitelist") {
-				t.Fatalf("error %q should name the whitelist", pe.Message)
-			}
 		})
+	}
+}
+
+// Only a rejection by the server's login counts toward its lockout, so
+// anything else may be tried again.
+func TestAnOddLoginFailureDoesNotStopTheClient(t *testing.T) {
+	f := newFake(t)
+	c := newTestClient(f, "account")
+	f.csrfBody = "<html>not json</html>"
+	final(t, list(c))
+	f.csrfBody = ""
+	if err := list(c); err != nil {
+		t.Fatalf("after the server recovered: %v", err)
+	}
+}
+
+func TestAFinal403DropsTheSession(t *testing.T) {
+	f := newFake(t)
+	f.deny = true
+	c := newTestClient(f, "account")
+	final(t, list(c))
+	sent := f.requests
+	final(t, list(c))
+	// CSRF token, login, one try; no wasted try on the dropped session.
+	if f.logins != 2 || f.requests-sent != 3 {
+		t.Fatalf("%d logins, %d requests for the second call, want 2 and 3", f.logins, f.requests-sent)
+	}
+}
+
+func TestRejectsAnUnknownAuthMode(t *testing.T) {
+	f := newFake(t)
+	for _, auth := range []string{"", "token"} {
+		pe := final(t, list(newClient(f.srv.URL, auth, "owner", fakePassword)))
+		if !strings.Contains(pe.Message, "auth") || f.requests != 0 {
+			t.Fatalf("auth %q: %q after %d requests", auth, pe.Message, f.requests)
+		}
 	}
 }
 
