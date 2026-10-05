@@ -145,6 +145,7 @@ func TestWorldFileRoundTrips(t *testing.T) {
 	a["priority"] = 3.0
 	a["position"] = "before_char"
 	a["case_sensitive"] = true
+	a["use_regex"] = true // SillyTavern has no such field
 	b := testEntry(7.0, "forge", "It burns.", 5)
 	b["extensions"] = map[string]any{"position": 4.0, "depth": 2.0, "probability": 50.0, "useProbability": true,
 		"group_weight": 20.0, "custom": "kept"}

@@ -23,7 +23,7 @@ var bookFields = []string{"description", "scan_depth", "token_budget", "recursiv
 
 // stashedFields are entry fields SillyTavern drops or rewrites, kept in the
 // entry's extensions.innkeeper.
-var stashedFields = []string{"id", "name", "position", "priority"}
+var stashedFields = []string{"id", "name", "position", "priority", "use_regex"}
 
 // setting is a SillyTavern entry field that a character_book entry keeps in
 // its extensions. null is what SillyTavern's converter writes for a null.
@@ -406,7 +406,7 @@ func fromWorldEntry(st map[string]any) map[string]any {
 		}
 	}
 	// An entry added in the browser has no id; its uid could clash with a pushed one.
-	for _, k := range []string{"id", "name", "priority"} {
+	for _, k := range []string{"id", "name", "priority", "use_regex"} {
 		if v, ok := stash[k]; ok {
 			e[k] = v
 		}
