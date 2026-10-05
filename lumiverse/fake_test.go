@@ -179,6 +179,11 @@ func (f *fake) avatar(w http.ResponseWriter, r *http.Request) {
 	raw, _ := io.ReadAll(file)
 	f.avatars++
 	c["image_id"] = fmt.Sprintf("img-%d-%d", f.avatars, len(raw))
+	// As replaceCharacterAvatar does: the old crop goes with the old image.
+	ext := object(c["extensions"])
+	delete(ext, "avatar_crop_image_id")
+	delete(ext, "original_image_id")
+	c["extensions"] = ext
 	reply(w, 200, c)
 }
 
@@ -263,12 +268,29 @@ func (f *fake) listEntries(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// entryColumns are what Lumiverse's createEntry stores, with its defaults.
+var entryColumns = map[string]any{"key": []any{}, "keysecondary": []any{}, "content": "", "comment": "",
+	"disabled": false, "order_value": 0.0, "position": 0.0, "depth": 4.0, "role": nil, "selective": false,
+	"constant": false, "case_sensitive": false, "match_whole_words": false, "group_name": "", "group_override": false,
+	"group_weight": 100.0, "probability": 100.0, "scan_depth": nil, "automation_id": nil, "selective_logic": 0.0,
+	"use_probability": true, "use_regex": false, "prevent_recursion": false, "exclude_recursion": false,
+	"delay_until_recursion": false, "priority": 10.0, "sticky": 0.0, "cooldown": 0.0, "delay": 0.0,
+	"vectorized": false, "extensions": map[string]any{}}
+
 func (f *fake) createEntry(w http.ResponseWriter, r *http.Request) {
 	b := f.book(w, r)
 	if b == nil {
 		return
 	}
-	e := body(r)
+	in := body(r)
+	e := map[string]any{}
+	for k, def := range entryColumns {
+		if v, ok := in[k]; ok && v != nil {
+			e[k] = v
+		} else {
+			e[k] = def
+		}
+	}
 	e["id"] = f.id("e")
 	e["uid"] = "uid-" + e["id"].(string)
 	f.entries[b["id"].(string)] = append(f.entries[b["id"].(string)], e)
@@ -295,7 +317,7 @@ func (f *fake) exportBook(w http.ResponseWriter, r *http.Request) {
 }
 
 // exportOf builds a character_book as Lumiverse's entryToCharacterBookSpec
-// does: ordered by order_value, renumbered, with its own extension keys.
+// does: ordered by order_value, renumbered, with its columns in extensions.
 func (f *fake) exportOf(b map[string]any) map[string]any {
 	list := slices.Clone(f.entries[b["id"].(string)])
 	slices.SortStableFunc(list, func(x, y map[string]any) int {
@@ -307,12 +329,23 @@ func (f *fake) exportOf(b map[string]any) map[string]any {
 		for k, v := range object(e["extensions"]) {
 			ext[k] = v
 		}
-		ext["priority"], ext["sticky"], ext["probability"], ext["uid"] = e["priority"], 0, 100, e["uid"]
-		entries = append(entries, map[string]any{"id": i, "keys": e["key"], "secondary_keys": e["keysecondary"],
+		for _, k := range []string{"priority", "sticky", "cooldown", "delay", "selective_logic", "use_probability",
+			"use_regex", "prevent_recursion", "exclude_recursion", "delay_until_recursion", "group_override",
+			"group_weight", "probability", "scan_depth", "automation_id", "vectorized", "uid"} {
+			ext[k] = e[k]
+		}
+		out := map[string]any{"id": i, "keys": e["key"], "secondary_keys": e["keysecondary"],
 			"content": e["content"], "comment": e["comment"], "enabled": e["disabled"] != true,
-			"insertion_order": e["order_value"], "position": e["position"], "depth": cmp.Or(e["depth"], any(4.0)),
+			"insertion_order": e["order_value"], "position": e["position"], "depth": e["depth"],
 			"selective": e["selective"], "constant": e["constant"], "case_sensitive": e["case_sensitive"],
-			"match_whole_words": false, "extensions": ext})
+			"match_whole_words": e["match_whole_words"], "extensions": ext}
+		if e["role"] != nil {
+			out["role"] = e["role"]
+		}
+		if e["group_name"] != "" {
+			out["group"] = e["group_name"]
+		}
+		entries = append(entries, out)
 	}
 	return map[string]any{"name": b["name"], "description": b["description"], "entries": entries}
 }

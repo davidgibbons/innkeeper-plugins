@@ -111,3 +111,47 @@ func TestDescribeIsValid(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// An entry with SillyTavern settings keeps them in Lumiverse, and reads back
+// exactly as pushed until it changes there.
+func TestEntrySettingsRoundTrip(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(t, f, "owner", fakePassword)
+	e := entry(4, "anvil", "It rings.", 2)
+	e["extensions"] = map[string]any{"probability": 50.0, "useRegex": true, "depth": 2.0, "custom": "kept"}
+	e["position"] = "at_depth"
+	pushed := map[string]any{"name": "Forge lore", "entries": []any{e}}
+	id := putBook(t, p, protocol.TargetPutLorebookParams{Key: "k", Lorebook: mustJSON(t, pushed)})
+	stored := f.entries[id][0]
+	if stored["probability"] != 50.0 || stored["use_regex"] != true || stored["depth"] != 2.0 || stored["position"] != 4.0 {
+		t.Fatalf("Lumiverse stored %v", stored)
+	}
+	got := getBook(t, p, id)["entries"].([]any)[0]
+	if !sameJSON(got, e) {
+		t.Fatalf("read back %v, want %v", got, e)
+	}
+
+	// The owner changes the probability in Lumiverse.
+	stored["probability"] = 75.0
+	got = getBook(t, p, id)["entries"].([]any)[0]
+	g := got.(map[string]any)
+	if object(g["extensions"])["probability"] != 75.0 || g["id"] != 4.0 || g["name"] != "anvil" ||
+		object(g["extensions"])[innkeeperKey] != nil {
+		t.Fatalf("after a change in Lumiverse: %v", got)
+	}
+}
+
+func TestEntryAddedInLumiverseHasNoID(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(t, f, "owner", fakePassword)
+	id := putBook(t, p, protocol.TargetPutLorebookParams{Key: "k", Lorebook: lorebook(entry(0, "a", "A", 1))})
+	f.entries[id] = append(f.entries[id], map[string]any{"id": "e99", "key": []any{"b"}, "content": "B",
+		"order_value": 0.0, "position": 0.0, "extensions": map[string]any{}, "uid": "u"})
+	entries := getBook(t, p, id)["entries"].([]any)
+	if len(entries) != 2 || entries[1].(map[string]any)["content"] != "B" {
+		t.Fatalf("entries = %v", entries)
+	}
+	if _, ok := entries[1].(map[string]any)["id"]; ok {
+		t.Fatalf("an entry added in Lumiverse has an id: %v", entries[1])
+	}
+}

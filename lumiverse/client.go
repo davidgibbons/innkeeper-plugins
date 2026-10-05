@@ -180,7 +180,8 @@ func (c *client) session(ctx context.Context, stale string) (string, error) {
 			"which restarts the plugin. Five rejections lock this server out of Lumiverse for a while. "+err.Error(), false)
 		return "", c.failed
 	}
-	c.token = cmp.Or(reply.Token, reply.Session.Token, resp.Header.Get("set-auth-token"))
+	// The bearer plugin's header carries the token it expects back.
+	c.token = cmp.Or(resp.Header.Get("set-auth-token"), reply.Token, reply.Session.Token)
 	if c.token == "" {
 		return "", protocol.NewError(-32000, "sign in: the reply has no token", false)
 	}

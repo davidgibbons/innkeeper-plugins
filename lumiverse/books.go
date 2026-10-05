@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/davidgibbons/innkeeper/protocol"
@@ -137,17 +139,66 @@ func (p *plugin) clearEntries(ctx context.Context, id string) error {
 }
 
 // positions maps CCv3 positions to Lumiverse's.
-var positions = map[string]int{"before_char": 0, "after_char": 1}
+var positions = map[string]int{
+	"before": 0, "before_char": 0, "before_character": 0,
+	"after": 1, "after_char": 1, "after_character": 1,
+	"before_an": 2, "before_authors_note": 2, "before_author_note": 2,
+	"after_an": 3, "after_authors_note": 3, "after_author_note": 3,
+	"at_depth": 4, "depth": 4,
+	"before_em": 5, "before_example": 5, "before_examples": 5, "before_example_messages": 5,
+	"after_em": 6, "after_example": 6, "after_examples": 6, "after_example_messages": 6,
+}
 
-// toEntry maps a CCv3 entry to a Lumiverse entry, as Lumiverse's own import
-// does. extensions.innkeeper keeps what Lumiverse would lose: the entry's
-// id, name, position, and place in the book.
-func toEntry(e map[string]any, index int) map[string]any {
-	ext := map[string]any{}
-	for k, v := range object(e["extensions"]) {
-		ext[k] = v
+// setting is a Lumiverse entry field that Lumiverse's import reads from a
+// CCv3 entry's own keys, then from its extensions, with a default.
+type setting struct {
+	field string
+	from  []string
+	def   any
+}
+
+var settings = []setting{
+	{"depth", []string{"depth"}, 4.0},
+	{"role", []string{"role"}, nil},
+	{"selective", []string{"selective"}, false},
+	{"constant", []string{"constant"}, false},
+	{"case_sensitive", []string{"case_sensitive", "caseSensitive"}, false},
+	{"match_whole_words", []string{"match_whole_words", "matchWholeWords"}, false},
+	{"group_name", []string{"group", "group_name"}, ""},
+	{"group_override", []string{"group_override", "groupOverride"}, false},
+	{"group_weight", []string{"group_weight", "groupWeight"}, 100.0},
+	{"probability", []string{"probability"}, 100.0},
+	{"scan_depth", []string{"scan_depth", "scanDepth"}, nil},
+	{"automation_id", []string{"automation_id", "automationId"}, nil},
+	{"selective_logic", []string{"selectiveLogic", "selective_logic"}, 0.0},
+	{"use_probability", []string{"useProbability", "use_probability"}, true},
+	{"use_regex", []string{"use_regex", "useRegex"}, false},
+	{"prevent_recursion", []string{"prevent_recursion", "preventRecursion"}, false},
+	{"exclude_recursion", []string{"exclude_recursion", "excludeRecursion"}, false},
+	{"delay_until_recursion", []string{"delay_until_recursion", "delayUntilRecursion"}, false},
+	{"priority", []string{"priority"}, 10.0},
+	{"sticky", []string{"sticky"}, 0.0},
+	{"cooldown", []string{"cooldown"}, 0.0},
+	{"delay", []string{"delay"}, 0.0},
+	{"vectorized", []string{"vectorized"}, false},
+}
+
+func (st setting) value(e, ext map[string]any) any {
+	for _, src := range []map[string]any{e, ext} {
+		for _, k := range st.from {
+			if v, ok := src[k]; ok && v != nil {
+				return v
+			}
+		}
 	}
-	ext[innkeeperKey] = map[string]any{"index": index, "id": e["id"], "name": e["name"], "position": e["position"]}
+	return st.def
+}
+
+// lumiverseFields maps a CCv3 entry to the fields of a Lumiverse entry, as
+// Lumiverse's own import does. The same mapping of what Lumiverse exports
+// tells whether the entry changed there.
+func lumiverseFields(e map[string]any, index int) map[string]any {
+	ext := object(e["extensions"])
 	comment, _ := e["comment"].(string)
 	name, _ := e["name"].(string)
 	enabled, ok := e["enabled"].(bool)
@@ -157,24 +208,44 @@ func toEntry(e map[string]any, index int) map[string]any {
 		order = index
 	}
 	out := map[string]any{
-		"key":            listOr(e["keys"]),
-		"keysecondary":   listOr(e["secondary_keys"]),
-		"content":        content,
-		"comment":        cmp.Or(comment, name),
-		"disabled":       ok && !enabled,
-		"order_value":    order,
-		"position":       position(e["position"]),
-		"selective":      e["selective"] == true,
-		"constant":       e["constant"] == true,
-		"case_sensitive": e["case_sensitive"] == true,
-		"extensions":     ext,
+		"key":          listOr(e["keys"]),
+		"keysecondary": listOr(e["secondary_keys"]),
+		"content":      content,
+		"comment":      cmp.Or(comment, name),
+		"disabled":     ok && !enabled,
+		"order_value":  order,
+		"position":     position(e["position"]),
 	}
-	if v, ok := e["priority"]; ok {
-		out["priority"] = v
+	for _, st := range settings {
+		if v := st.value(e, ext); v != nil {
+			out[st.field] = v
+		}
 	}
-	if v, ok := ext["depth"]; ok {
-		out["depth"] = v
+	return out
+}
+
+// toEntry is the Lumiverse entry for a CCv3 entry. extensions.innkeeper
+// keeps the entry as pushed and its place in the book, which Lumiverse
+// would lose.
+func toEntry(e map[string]any, index int) map[string]any {
+	ext := map[string]any{}
+	for k, v := range object(e["extensions"]) {
+		if k != innkeeperKey {
+			ext[k] = v
+		}
 	}
+	orig := map[string]any{}
+	for k, v := range e {
+		orig[k] = v
+	}
+	orig["extensions"] = ext
+	out := lumiverseFields(orig, index)
+	stashed := map[string]any{}
+	for k, v := range ext {
+		stashed[k] = v
+	}
+	stashed[innkeeperKey] = map[string]any{"index": index, "entry": orig}
+	out["extensions"] = stashed
 	return out
 }
 
@@ -183,7 +254,11 @@ func position(v any) any {
 	case float64:
 		return p
 	case string:
-		if n, ok := positions[strings.ToLower(strings.TrimSpace(p))]; ok {
+		p = strings.ToLower(strings.TrimSpace(p))
+		if n, err := strconv.ParseFloat(p, 64); err == nil {
+			return n
+		}
+		if n, ok := positions[p]; ok {
 			return n
 		}
 	}
@@ -208,14 +283,11 @@ func (p *plugin) getLorebook(ctx context.Context, params json.RawMessage) (any, 
 		book[k] = v
 	}
 	entries, _ := book["entries"].([]any)
-	for _, e := range entries {
-		fromEntry(object(e))
-	}
 	// Lumiverse orders entries by insertion order; restore the book's order.
 	// Entries added in Lumiverse go last.
 	slices.SortStableFunc(entries, func(a, b any) int { return cmp.Compare(entryIndex(a), entryIndex(b)) })
-	for _, e := range entries {
-		delete(object(object(e)["extensions"]), innkeeperKey)
+	for i, e := range entries {
+		entries[i] = fromEntry(object(e))
 	}
 	book["entries"] = entries
 	raw, err := json.Marshal(book)
@@ -225,27 +297,36 @@ func (p *plugin) getLorebook(ctx context.Context, params json.RawMessage) (any, 
 	return protocol.TargetGetLorebookResult{Lorebook: raw}, nil
 }
 
-// fromEntry restores the id, name, and position a pushed entry had. A
-// position changed in Lumiverse stays as Lumiverse reports it.
-func fromEntry(e map[string]any) {
-	stash := object(object(e["extensions"])[innkeeperKey])
-	if len(stash) == 0 {
-		return
+// fromEntry returns the entry as pushed if Lumiverse still holds what the
+// push sent, or else Lumiverse's version, with the pushed id and name.
+func fromEntry(e map[string]any) any {
+	ext := object(e["extensions"])
+	stash := object(ext[innkeeperKey])
+	delete(ext, innkeeperKey)
+	orig := object(stash["entry"])
+	if len(orig) == 0 {
+		// Added in Lumiverse: its id is only a position in the export.
+		delete(e, "id")
+		return e
+	}
+	index, _ := stash["index"].(float64)
+	if sameJSON(lumiverseFields(orig, int(index)), lumiverseFields(e, int(index))) {
+		return orig
 	}
 	for _, k := range []string{"id", "name"} {
-		if v, ok := stash[k]; ok && v != nil {
+		if v, ok := orig[k]; ok {
 			e[k] = v
 		} else {
 			delete(e, k)
 		}
 	}
-	if pos, ok := stash["position"]; ok && fmt.Sprint(position(pos)) == fmt.Sprint(e["position"]) {
-		if pos == nil {
-			delete(e, "position")
-		} else {
-			e["position"] = pos
-		}
-	}
+	return e
+}
+
+func sameJSON(a, b any) bool {
+	ra, errA := json.Marshal(a)
+	rb, errB := json.Marshal(b)
+	return errA == nil && errB == nil && bytes.Equal(ra, rb)
 }
 
 func entryIndex(e any) float64 {

@@ -89,9 +89,13 @@ func TestUpdateCharacter(t *testing.T) {
 	if f.avatars != 1 {
 		t.Fatalf("uploaded the same avatar %d times", f.avatars)
 	}
+	object(f.characters[id]["extensions"])["avatar_crop_image_id"] = "crop-1"
 	put(t, p, protocol.TargetPutParams{Card: card(nil), RemoteID: id, Avatar: avatarFile(t, "bbb")})
 	if f.avatars != 2 {
 		t.Fatal("a new avatar wasn't uploaded")
+	}
+	if _, ok := object(f.characters[id]["extensions"])["avatar_crop_image_id"]; ok {
+		t.Fatal("the push restored the old avatar's crop")
 	}
 	if _, err := p.put(context.Background(), mustJSON(t, protocol.TargetPutParams{Card: card(nil), RemoteID: "gone"})); !notFound(err) {
 		t.Fatalf("put to a missing character: %v", err)

@@ -32,6 +32,11 @@ Lumiverse stores CCv3 fields it has no place for in the plugin's own keys:
 books. Leave them alone; the plugin uses them to find its earlier copies and
 to restore entry IDs, names, and order.
 
-Lumiverse adds about 17 settings to each world book entry's `extensions`,
-such as `sticky` and `probability`. They come back with the lorebook, and
-adopting changes from Lumiverse brings them into the library.
+An entry reads back exactly as pushed until it changes in Lumiverse. A
+changed entry comes back as Lumiverse exports it, with about 17 settings
+such as `sticky` and `probability` under `extensions`, and adopting it brings
+them into the library.
+
+Point only one Innkeeper at a Lumiverse account. The plugin finds its
+earlier copies by keys that are unique only within one Innkeeper, so a
+second one could take over the first's characters and world books.

@@ -154,9 +154,25 @@ func cardForLumiverse(data map[string]any) map[string]any {
 // updateCharacter makes character id match data: every field, the avatar if
 // it changed, and the world book links. It keeps Lumiverse's own extensions.
 func (p *plugin) updateCharacter(ctx context.Context, id string, data map[string]any, in protocol.TargetPutParams) error {
+	path := "/characters/" + url.PathEscape(id)
 	var cur character
-	if err := p.c.call(ctx, "GET", "/characters/"+url.PathEscape(id), nil, &cur); err != nil {
+	if err := p.c.call(ctx, "GET", path, nil, &cur); err != nil {
 		return err
+	}
+	stash := map[string]any{"key": keyOr(cur.stash()["key"], in.Key)}
+	if v, ok := cur.stash()["avatar"]; ok {
+		stash["avatar"] = v
+	}
+	if sha := filepath.Base(in.Avatar); in.Avatar != "" && stash["avatar"] != sha {
+		if err := p.uploadAvatar(ctx, id, in.Avatar); err != nil {
+			return err
+		}
+		stash["avatar"] = sha
+		// The upload changes Lumiverse's own avatar keys.
+		cur = character{}
+		if err := p.c.call(ctx, "GET", path, nil, &cur); err != nil {
+			return err
+		}
 	}
 	data = cardForLumiverse(data)
 	ext := object(data["extensions"])
@@ -170,19 +186,6 @@ func (p *plugin) updateCharacter(ctx context.Context, id string, data map[string
 	if v, ok := data["character_version"]; ok {
 		ext["character_version"] = v
 	}
-	stash := map[string]any{"key": keyOr(cur.stash()["key"], in.Key)}
-	if v, ok := cur.stash()["avatar"]; ok {
-		stash["avatar"] = v
-	}
-	if in.Avatar != "" {
-		sha := filepath.Base(in.Avatar)
-		if stash["avatar"] != sha {
-			if err := p.uploadAvatar(ctx, id, in.Avatar); err != nil {
-				return err
-			}
-			stash["avatar"] = sha
-		}
-	}
 	ext[innkeeperKey] = stash
 	body := map[string]any{"extensions": ext,
 		"tags": listOr(data["tags"]), "alternate_greetings": listOr(data["alternate_greetings"])}
@@ -190,7 +193,7 @@ func (p *plugin) updateCharacter(ctx context.Context, id string, data map[string
 		s, _ := data[f].(string)
 		body[f] = s
 	}
-	return p.c.call(ctx, "PUT", "/characters/"+url.PathEscape(id), body, nil)
+	return p.c.call(ctx, "PUT", path, body, nil)
 }
 
 // orEmpty sends no links as an empty list, which unlinks them all.
