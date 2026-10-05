@@ -1,0 +1,59 @@
+# sillytavern
+
+Pushes cards to a [SillyTavern](https://github.com/SillyTavern/SillyTavern)
+server as characters, and lorebooks as world info files, and reads both back
+so Innkeeper can show changes made in SillyTavern.
+
+```bash
+innkeeper call POST /instances '{"plugin": "sillytavern", "name": "SillyTavern",
+  "config": {"url": "https://sillytavern.example.com", "auth": "account", "username": "owner"},
+  "secrets": {"password": "<password>"}}'
+```
+
+## Reaching the server
+
+SillyTavern's `whitelistMode` is on by default and allows only localhost.
+Either:
+
+- add Innkeeper's address to `whitelist` in SillyTavern's `config.yaml`, or
+- set `whitelistMode: false` and turn on basic auth or accounts.
+
+## Auth modes
+
+Set `auth` to match the server. `username` is required unless `auth` is
+`none`.
+
+| `auth` | Server setting |
+| --- | --- |
+| `none` | No login. |
+| `basic` | `basicAuthMode`. With user accounts on, it also needs `perUserBasicAuth`. |
+| `account` | `enableUserAccounts`. |
+
+One username and password can't cover shared basic auth plus an account
+login, so that setup isn't supported.
+
+SillyTavern allows 5 login attempts per minute per address. If it rejects the
+password, the plugin stops logging in until you change the instance's config
+or secrets.
+
+## What it syncs
+
+- Card fields SillyTavern keeps.
+- The avatar, uploaded only when it changes.
+- Lorebooks as world info files, linked by the character's world setting.
+  A character has one lorebook; a card with two fails its push.
+  Character filters on world info entries don't sync.
+
+The plugin keeps its own keys in `extensions.innkeeper` on characters, world
+files, and entries. Leave them alone. SillyTavern's "Duplicate" copies them,
+so delete the copy's `innkeeper` extension, or the two share a key and an
+entry id.
+
+Renaming a character in SillyTavern changes its file name, so the next push
+makes a new copy.
+
+An open SillyTavern tab keeps its own copy of a character or world file, and
+its next save overwrites a push. Reload the tab after pushing. Drift checks
+show such overwrites as changes.
+
+Point only one Innkeeper at a SillyTavern user.

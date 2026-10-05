@@ -32,3 +32,11 @@ version = "0.1.0"
 protocol = 1
 capabilities = ["push", "pull"]
 description = "Push cards and lorebooks to a Lumiverse server as characters and world books, and read them back."
+
+[[plugin]]
+name = "sillytavern"
+path = "sillytavern"
+version = "0.1.0"
+protocol = 1
+capabilities = ["push", "pull"]
+description = "Push cards and lorebooks to a SillyTavern server as characters and world info files, and read them back."
