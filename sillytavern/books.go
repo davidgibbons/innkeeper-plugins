@@ -321,14 +321,14 @@ func (p *plugin) getLorebook(ctx context.Context, params json.RawMessage) (any, 
 		raw, _ := json.Marshal(e)
 		stored = append(stored, item{object(e), raw})
 	}
-	// uid is the index at push, and the browser gives an added entry the next
-	// one. The JSON breaks ties between duplicates, so the order can't flap.
+	// uid is the index at push; the browser gives an added entry the lowest
+	// free uid. The JSON breaks ties between duplicates, so the order can't flap.
 	slices.SortFunc(stored, func(a, b item) int {
 		return cmp.Or(cmp.Compare(number(a.e["uid"]), number(b.e["uid"])), bytes.Compare(a.raw, b.raw))
 	})
 	entries := make([]any, len(stored))
 	for i, it := range stored {
-		entries[i] = fromWorldEntry(it.e, i)
+		entries[i] = fromWorldEntry(it.e)
 	}
 	book["entries"] = entries
 	raw, err := json.Marshal(book)
@@ -355,7 +355,7 @@ func topPosition(v any) float64 {
 
 // fromWorldEntry is convertWorldInfoToCharacterBook's entry for st, with the
 // stashed fields restored. Settings come back only where st has them.
-func fromWorldEntry(st map[string]any, index int) map[string]any {
+func fromWorldEntry(st map[string]any) map[string]any {
 	ext := map[string]any{}
 	for k, v := range object(st["extensions"]) {
 		ext[k] = v
@@ -386,7 +386,7 @@ func fromWorldEntry(st map[string]any, index int) map[string]any {
 		ext["position"] = pos
 	}
 	if v, ok := st["displayIndex"]; ok {
-		if _, in := ext["display_index"]; in || number(v) != float64(index) {
+		if _, in := ext["display_index"]; in || number(v) != number(st["uid"]) {
 			ext["display_index"] = v
 		}
 	}

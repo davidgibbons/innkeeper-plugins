@@ -305,3 +305,20 @@ func TestAnEntryWithoutContentIsPushedEmpty(t *testing.T) {
 		t.Fatalf("stored %v", st)
 	}
 }
+
+// A uid gap left by a browser deletion isn't a reorder.
+func TestADeletedEntryLeavesNoDisplayIndex(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(f)
+	id := putBook(t, p, "k", testBook("Forge lore", testEntry(1.0, "a", "A", 1), testEntry(2.0, "b", "B", 2), testEntry(3.0, "c", "C", 3)))
+	delete(object(f.worlds[id]["entries"]), "1")
+	got := getBook(t, p, id)["entries"].([]any)
+	if len(got) != 2 {
+		t.Fatalf("entries %v", got)
+	}
+	for _, e := range got {
+		if _, ok := object(object(e)["extensions"])["display_index"]; ok {
+			t.Fatalf("display_index in %v", e)
+		}
+	}
+}
