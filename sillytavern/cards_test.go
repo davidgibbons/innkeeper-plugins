@@ -151,13 +151,13 @@ func TestUpdateCharacter(t *testing.T) {
 		t.Fatalf("merge top level = %v", m)
 	}
 	sent := object(m["data"])
-	for _, k := range cardFields {
-		if _, ok := sent[k]; !ok && k != "creator_notes_multilingual" {
+	for _, k := range v2Fields {
+		if _, ok := sent[k]; !ok {
 			t.Errorf("merge didn't send data.%s", k)
 		}
 	}
 	sentExt := object(sent["extensions"])
-	if sent["personality"] != "" || sent["nickname"] != "" || sent["character_book"] != unset ||
+	if sent["personality"] != "" || sent["nickname"] != unset || sent["source"] != nil || sent["character_book"] != unset ||
 		sentExt["depth_prompt"] != unset || sentExt["talkativeness"] != unset || sentExt["world"] != "" {
 		t.Fatalf("merge data = %v", sent)
 	}
@@ -168,6 +168,13 @@ func TestUpdateCharacter(t *testing.T) {
 	if c["first_mes"] != "Well met." || data["first_mes"] != "Well met." || data["character_book"] != nil ||
 		ext["depth_prompt"] != nil || ext["fav"] != true || fmt.Sprint(ext[innkeeperKey]) != "map[avatar:aaa key:k]" {
 		t.Fatalf("character = %v", c)
+	}
+	res, err := p.get(context.Background(), mustJSON(t, protocol.TargetGetParams{RemoteID: id}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(res.(protocol.TargetGetResult).Card), "nickname") {
+		t.Fatalf("read back a nickname the card lacks: %s", res.(protocol.TargetGetResult).Card)
 	}
 	if f.avatars[id] != 0 {
 		t.Fatalf("uploaded the same avatar %d times", f.avatars[id])

@@ -15,14 +15,14 @@ import (
 	"github.com/davidgibbons/innkeeper/protocol"
 )
 
-// cardFields are the CCv3 fields SillyTavern keeps as sent.
-var cardFields = []string{"name", "description", "personality", "scenario", "first_mes", "mes_example",
+// v2Fields are the fields SillyTavern's own code expects every card to have.
+var v2Fields = []string{"name", "description", "personality", "scenario", "first_mes", "mes_example",
 	"creator", "creator_notes", "system_prompt", "post_history_instructions", "alternate_greetings", "tags",
-	"character_version", "extensions", "nickname", "group_only_greetings", "creator_notes_multilingual",
-	"source", "assets"}
+	"character_version"}
 
-// listFields are the cardFields that hold arrays.
-var listFields = []string{"alternate_greetings", "tags", "group_only_greetings", "source", "assets"}
+// cardFields are the CCv3 fields SillyTavern keeps as sent.
+var cardFields = append(slices.Clone(v2Fields), "extensions", "nickname", "group_only_greetings",
+	"creator_notes_multilingual", "source", "assets")
 
 // v1Fields are copied to the card's top level, which SillyTavern's PNG
 // export writes as stored.
@@ -182,16 +182,13 @@ func (p *plugin) updateCharacter(ctx context.Context, id string, data map[string
 		}
 		stash["avatar"] = sha
 	}
-	// The merge keeps whatever it isn't sent.
-	for _, k := range cardFields {
-		if _, ok := data[k]; ok {
-			continue
-		}
-		switch {
-		case slices.Contains(listFields, k):
-			data[k] = []any{}
-		case k != "creator_notes_multilingual":
+	// The merge keeps whatever it isn't sent; unsetMissing covers the rest.
+	for _, k := range v2Fields {
+		if _, ok := data[k]; !ok {
 			data[k] = ""
+			if k == "alternate_greetings" || k == "tags" {
+				data[k] = []any{}
+			}
 		}
 	}
 	unsetMissing(data, curData)
