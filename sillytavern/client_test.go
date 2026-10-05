@@ -288,11 +288,12 @@ func TestErrors(t *testing.T) {
 
 func TestAnOversizedReplyIsFinal(t *testing.T) {
 	defer func(n int64) { maxReply = n }(maxReply)
-	maxReply = 4
+	// Room for the login's replies, not the list's.
+	maxReply = 32
 	f := newFake(t)
 	f.worlds["Dwarves"] = map[string]any{"entries": map[string]any{}}
 	pe := final(t, newTestClient(f, "account").call(context.Background(), "/api/worldinfo/list", map[string]any{}, &[]any{}))
-	if !strings.Contains(pe.Message, "over") {
+	if !strings.Contains(pe.Message, "/api/worldinfo/list: reply over 32 bytes") {
 		t.Fatalf("error %q should say the reply is too big", pe.Message)
 	}
 }

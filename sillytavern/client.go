@@ -156,7 +156,7 @@ func decode(resp *http.Response, what string, out any) error {
 		return protocol.NewError(-32000, what+": "+err.Error(), true)
 	}
 	if int64(len(body)) > maxReply {
-		return protocol.NewError(-32000, fmt.Sprintf("%s: reply over %d MiB", what, maxReply>>20), false)
+		return protocol.NewError(-32000, fmt.Sprintf("%s: reply over %d bytes", what, maxReply), false)
 	}
 	switch {
 	case resp.StatusCode == http.StatusNotFound:
