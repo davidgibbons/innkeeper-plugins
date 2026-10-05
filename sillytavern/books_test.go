@@ -265,3 +265,43 @@ func TestAnEntryWithoutEnabledIsPushedEnabled(t *testing.T) {
 		t.Fatalf("stored %v", st)
 	}
 }
+
+func TestDisplayIndexRoundTrips(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(f)
+	a := testEntry(1.0, "anvil", "It rings.", 1)
+	a["extensions"] = map[string]any{"display_index": 5.0}
+	book := testBook("Forge lore", a, testEntry(2.0, "forge", "It burns.", 2))
+	id := putBook(t, p, "k", book)
+	if st := object(object(f.worlds[id]["entries"])["0"]); st["displayIndex"] != 5.0 || st["uid"] != 0.0 {
+		t.Fatalf("stored %v", st)
+	}
+	if got := getBook(t, p, id); !reflect.DeepEqual(got, normal(t, book)) {
+		t.Fatalf("read back\n%s\nwant\n%s", mustJSON(t, got), mustJSON(t, book))
+	}
+}
+
+// Dragging entries in the browser changes displayIndex, not the entries' order.
+func TestABrowserReorderReadsBackAsDisplayIndex(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(f)
+	id := putBook(t, p, "k", testBook("Forge lore", testEntry(1.0, "anvil", "A", 1), testEntry(2.0, "forge", "F", 2)))
+	entries := object(f.worlds[id]["entries"])
+	object(entries["0"])["displayIndex"], object(entries["1"])["displayIndex"] = 1.0, 0.0
+	got := getBook(t, p, id)["entries"].([]any)
+	a, b := object(got[0]), object(got[1])
+	if a["name"] != "anvil" || object(a["extensions"])["display_index"] != 1.0 ||
+		b["name"] != "forge" || object(b["extensions"])["display_index"] != 0.0 {
+		t.Fatalf("entries %v", got)
+	}
+}
+
+func TestAnEntryWithoutContentIsPushedEmpty(t *testing.T) {
+	f := newFake(t)
+	e := testEntry(1.0, "anvil", "", 1)
+	delete(e, "content")
+	id := putBook(t, newPlugin(f), "k", testBook("Forge lore", e))
+	if st := object(object(f.worlds[id]["entries"])["0"]); st["content"] != "" {
+		t.Fatalf("stored %v", st)
+	}
+}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -238,13 +239,18 @@ func toWorldEntry(e map[string]any, index int) map[string]any {
 	if v := ext["position"]; v != nil {
 		position = v
 	}
+	content, _ := e["content"].(string)
+	displayIndex := ext["display_index"]
+	if displayIndex == nil {
+		displayIndex = index
+	}
 	out := map[string]any{
 		"uid":          index,
-		"displayIndex": index,
+		"displayIndex": displayIndex,
 		"key":          listOr(e["keys"]),
 		"keysecondary": listOr(e["secondary_keys"]),
 		"comment":      comment,
-		"content":      e["content"],
+		"content":      content,
 		"constant":     e["constant"] == true,
 		"selective":    e["selective"] == true,
 		"disable":      e["enabled"] == false, // SillyTavern's import disables it; silently hidden lore is worse
@@ -306,16 +312,23 @@ func (p *plugin) getLorebook(ctx context.Context, params json.RawMessage) (any, 
 			book[k] = v
 		}
 	}
-	var stored []map[string]any
-	for _, e := range object(data["entries"]) {
-		stored = append(stored, object(e))
+	type item struct {
+		e   map[string]any
+		raw []byte
 	}
-	slices.SortFunc(stored, func(a, b map[string]any) int {
-		return cmp.Or(cmp.Compare(number(a["displayIndex"]), number(b["displayIndex"])), cmp.Compare(number(a["uid"]), number(b["uid"])))
+	var stored []item
+	for _, e := range object(data["entries"]) {
+		raw, _ := json.Marshal(e)
+		stored = append(stored, item{object(e), raw})
+	}
+	// uid is the index at push, and the browser gives an added entry the next
+	// one. The JSON breaks ties between duplicates, so the order can't flap.
+	slices.SortFunc(stored, func(a, b item) int {
+		return cmp.Or(cmp.Compare(number(a.e["uid"]), number(b.e["uid"])), bytes.Compare(a.raw, b.raw))
 	})
 	entries := make([]any, len(stored))
-	for i, e := range stored {
-		entries[i] = fromWorldEntry(e)
+	for i, it := range stored {
+		entries[i] = fromWorldEntry(it.e, i)
 	}
 	book["entries"] = entries
 	raw, err := json.Marshal(book)
@@ -342,7 +355,7 @@ func topPosition(v any) float64 {
 
 // fromWorldEntry is convertWorldInfoToCharacterBook's entry for st, with the
 // stashed fields restored. Settings come back only where st has them.
-func fromWorldEntry(st map[string]any) map[string]any {
+func fromWorldEntry(st map[string]any, index int) map[string]any {
 	ext := map[string]any{}
 	for k, v := range object(st["extensions"]) {
 		ext[k] = v
@@ -372,8 +385,10 @@ func fromWorldEntry(st map[string]any) map[string]any {
 	if hasPos && (extPos || pos != topPosition(position)) {
 		ext["position"] = pos
 	}
-	if _, ok := ext["display_index"]; ok {
-		ext["display_index"] = st["displayIndex"]
+	if v, ok := st["displayIndex"]; ok {
+		if _, in := ext["display_index"]; in || number(v) != float64(index) {
+			ext["display_index"] = v
+		}
 	}
 	if v, ok := st["caseSensitive"]; ok {
 		if _, in := ext["case_sensitive"]; in || v == nil {
