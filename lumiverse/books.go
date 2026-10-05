@@ -115,6 +115,24 @@ func (p *plugin) findBook(ctx context.Context, key string) (worldBook, error) {
 	}
 }
 
+// list returns every item a paged Lumiverse list route has. path already
+// has a query string.
+func (p *plugin) list(ctx context.Context, path string) (protocol.TargetListResult, error) {
+	items := []protocol.TargetItem{}
+	for offset := 0; ; offset += 1000 {
+		var got page[struct{ ID, Name string }]
+		if err := p.c.call(ctx, "GET", fmt.Sprintf("%s&limit=1000&offset=%d", path, offset), nil, &got); err != nil {
+			return protocol.TargetListResult{}, err
+		}
+		for _, it := range got.Data {
+			items = append(items, protocol.TargetItem{RemoteID: it.ID, Name: it.Name})
+		}
+		if len(got.Data) == 0 || offset+len(got.Data) >= got.Total {
+			return protocol.TargetListResult{Items: items}, nil
+		}
+	}
+}
+
 // clearEntries deletes every entry of a world book.
 func (p *plugin) clearEntries(ctx context.Context, id string) error {
 	for {

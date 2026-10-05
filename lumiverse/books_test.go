@@ -155,3 +155,27 @@ func TestEntryAddedInLumiverseHasNoID(t *testing.T) {
 		t.Fatalf("an entry added in Lumiverse has an id: %v", entries[1])
 	}
 }
+
+// Lumiverse returns at most 1000 world books a page.
+func TestListWorldBooks(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(t, f, "owner", fakePassword)
+	for i := range 1001 {
+		id := fmt.Sprintf("wb%04d", i)
+		f.books[id] = map[string]any{"id": id, "name": fmt.Sprintf("Book %04d", i)}
+	}
+	res, err := p.list(context.Background(), "/world-books?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, it := range res.Items {
+		seen[it.RemoteID] = true
+		if f.books[it.RemoteID]["name"] != it.Name {
+			t.Fatalf("item %v", it)
+		}
+	}
+	if len(res.Items) != 1001 || len(seen) != 1001 {
+		t.Fatalf("listed %d items, %d distinct", len(res.Items), len(seen))
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -132,13 +133,32 @@ func (f *fake) importCharacter(w http.ResponseWriter, r *http.Request) {
 
 func (f *fake) summary(w http.ResponseWriter, r *http.Request) {
 	q := strings.ToLower(r.URL.Query().Get("search"))
-	out := []any{}
+	out := []map[string]any{}
 	for _, c := range f.characters {
 		if strings.Contains(strings.ToLower(c["name"].(string)), q) {
 			out = append(out, map[string]any{"id": c["id"], "name": c["name"]})
 		}
 	}
-	reply(w, 200, map[string]any{"data": out, "total": len(out)})
+	paginate(w, r, out)
+}
+
+// paginate replies with one page of list as parsePagination and
+// paginatedQuery do: limit defaults to 50 and is capped at 1000. It sorts by
+// name then ID, whatever the request's sort, so pages don't overlap.
+func paginate(w http.ResponseWriter, r *http.Request, list []map[string]any) {
+	slices.SortFunc(list, func(x, y map[string]any) int {
+		return cmp.Or(cmp.Compare(fmt.Sprint(x["name"]), fmt.Sprint(y["name"])),
+			cmp.Compare(fmt.Sprint(x["id"]), fmt.Sprint(y["id"])))
+	})
+	limit, offset := 50, 0
+	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil {
+		limit = min(max(n, 1), 1000)
+	}
+	if n, err := strconv.Atoi(r.URL.Query().Get("offset")); err == nil && n >= 0 {
+		offset = n
+	}
+	data := list[min(offset, len(list)):min(offset+limit, len(list))]
+	reply(w, 200, map[string]any{"data": data, "total": len(list), "limit": limit, "offset": offset})
 }
 
 func (f *fake) character(w http.ResponseWriter, r *http.Request) map[string]any {
@@ -223,11 +243,11 @@ func (f *fake) createBook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (f *fake) listBooks(w http.ResponseWriter, r *http.Request) {
-	out := []any{}
+	out := []map[string]any{}
 	for _, b := range f.books {
 		out = append(out, b)
 	}
-	reply(w, 200, map[string]any{"data": out, "total": len(out)})
+	paginate(w, r, out)
 }
 
 func (f *fake) book(w http.ResponseWriter, r *http.Request) map[string]any {

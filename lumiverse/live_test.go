@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -65,6 +66,24 @@ func TestLive(t *testing.T) {
 	}
 	if fmt.Sprint(c.Extensions["world_book_ids"]) != "["+bookID+"]" {
 		t.Errorf("world_book_ids = %v", c.Extensions["world_book_ids"])
+	}
+
+	// Both lists hold what the test made, and a listed character reads back.
+	chars, err := p.list(ctx, "/characters/summary?sort=name&direction=asc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(chars.Items, protocol.TargetItem{RemoteID: id, Name: name}) {
+		t.Errorf("%s missing from %d listed characters", id, len(chars.Items))
+	} else if data := liveCard(t, p, id); data["name"] != name {
+		t.Errorf("listed character read back as %v", data["name"])
+	}
+	books, err := p.list(ctx, "/world-books?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(books.Items, protocol.TargetItem{RemoteID: bookID, Name: name + " lore"}) {
+		t.Errorf("%s missing from %d listed world books", bookID, len(books.Items))
 	}
 
 	// A re-run with the same key finds the character.

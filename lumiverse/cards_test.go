@@ -125,3 +125,27 @@ func TestGetCharacter(t *testing.T) {
 		t.Fatalf("get of a missing character: %v", err)
 	}
 }
+
+// Lumiverse returns at most 1000 characters a page.
+func TestListCharacters(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(t, f, "owner", fakePassword)
+	for i := range 1001 {
+		id := fmt.Sprintf("c%04d", i)
+		f.characters[id] = map[string]any{"id": id, "name": fmt.Sprintf("Char %04d", i)}
+	}
+	res, err := p.list(context.Background(), "/characters/summary?sort=name&direction=asc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, it := range res.Items {
+		seen[it.RemoteID] = true
+		if f.characters[it.RemoteID]["name"] != it.Name {
+			t.Fatalf("item %v", it)
+		}
+	}
+	if len(res.Items) != 1001 || len(seen) != 1001 {
+		t.Fatalf("listed %d items, %d distinct", len(res.Items), len(seen))
+	}
+}

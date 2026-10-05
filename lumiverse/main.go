@@ -63,6 +63,13 @@ func main() {
 			return p.putLorebook(ctx, params)
 		case protocol.MethodTargetGetLorebook:
 			return p.getLorebook(ctx, params)
+		case protocol.MethodTargetList:
+			// By name: the default order moves a character up when it's chatted with.
+			return p.list(ctx, "/characters/summary?sort=name&direction=asc")
+		case protocol.MethodTargetListLorebooks:
+			// ponytail: Lumiverse orders these by updated_at only, so a book
+			// edited mid-listing can be skipped or repeated.
+			return p.list(ctx, "/world-books?")
 		}
 		return nil, protocol.MethodNotFound(method)
 	}
