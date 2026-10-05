@@ -35,8 +35,9 @@ type fake struct {
 	csrfBody     string // when set, /csrf-token answers 200 with this body, as a proxy might
 
 	// Test hooks.
-	deny     bool // answer every private route with 403, as a disabled account would
-	failWith int  // answer every private route with this status
+	deny      bool // answer every private route with 403, as a disabled account would
+	failWith  int  // answer every private route with this status
+	badImport bool // answer /import with {error: true}
 
 	// What the server saw.
 	requests      int
@@ -49,7 +50,8 @@ type fake struct {
 
 	characters map[string]map[string]any // by file name, the stored JSON
 	images     map[string][]byte
-	avatars    map[string]int // /edit-avatar uploads by file name
+	avatars    map[string]int   // /edit-avatar uploads by file name
+	merges     []map[string]any // /merge-attributes bodies
 	worlds     map[string]map[string]any
 }
 
@@ -58,10 +60,7 @@ type fakeSession struct {
 	csrf   string
 }
 
-const (
-	fakePassword = "hunter2"
-	unset        = "__@@UNSET@@__"
-)
+const fakePassword = "hunter2"
 
 func newFake(t *testing.T) *fake {
 	f := &fake{sessions: map[string]*fakeSession{}, handle: "owner", password: fakePassword,
@@ -102,14 +101,6 @@ func reply(w http.ResponseWriter, status int, v any) {
 func body(r *http.Request) map[string]any {
 	var m map[string]any
 	_ = json.NewDecoder(r.Body).Decode(&m)
-	return m
-}
-
-func object(v any) map[string]any {
-	m, _ := v.(map[string]any)
-	if m == nil {
-		m = map[string]any{}
-	}
 	return m
 }
 
@@ -240,6 +231,10 @@ func readFromV2(c map[string]any) {
 	}
 	c["creatorcomment"] = data["creator_notes"]
 	c["fav"] = false
+	ext := object(data["extensions"])
+	ext["fav"] = false
+	data["extensions"] = ext
+	c["data"] = data
 	c["avatar"] = "none"
 	c["create_date"] = time.Now().Format(time.RFC3339)
 	delete(c, "chat")
@@ -329,7 +324,7 @@ func (f *fake) charactersImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	raw, _, err := card.Decode(file)
-	if err != nil || fields["file_type"] != "png" {
+	if err != nil || fields["file_type"] != "png" || f.badImport {
 		reply(w, 200, map[string]any{"error": true})
 		return
 	}
@@ -386,6 +381,7 @@ func processUnset(target, source map[string]any) {
 // charactersMerge answers 500 for a missing card, as the real route does.
 func (f *fake) charactersMerge(w http.ResponseWriter, r *http.Request) {
 	update := body(r)
+	f.merges = append(f.merges, update)
 	file, _ := update["avatar"].(string)
 	c, ok := f.characters[file]
 	if !ok {
