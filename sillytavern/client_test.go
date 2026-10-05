@@ -143,8 +143,6 @@ func TestStopsAfterARejectedLogin(t *testing.T) {
 	}
 }
 
-// Only a rejection by the server's login counts toward its lockout, so
-// anything else may be tried again.
 // A refused address costs no login attempt and is fixed in SillyTavern's
 // config, so the next call tries again.
 func TestAWhitelistRefusalDoesNotStopTheClient(t *testing.T) {
@@ -218,6 +216,8 @@ func TestConcurrentCallsShareOneLogin(t *testing.T) {
 	}
 }
 
+// Only a rejection by the server's login counts toward its lockout, so
+// anything else may be tried again.
 func TestAnOddLoginFailureDoesNotStopTheClient(t *testing.T) {
 	f := newFake(t)
 	c := newTestClient(f, "account")

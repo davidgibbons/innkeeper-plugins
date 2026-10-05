@@ -40,6 +40,9 @@ type session struct {
 // proxy's http-to-https 301 turns a POST into a GET, which SillyTavern
 // answers with a 404 that would read as a missing character.
 func sameHostSameMethod(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
 	last := via[len(via)-1]
 	if req.URL.Scheme == last.URL.Scheme && req.URL.Host == last.URL.Host && req.Method == last.Method {
 		return nil
@@ -230,8 +233,9 @@ func (e *rejection) Error() string {
 }
 
 // login makes s a session SillyTavern accepts. For basic auth, GET /login
-// binds the session to the account when accounts and perUserBasicAuth are on. The CSRF token comes
-// first for an account login, which is itself a POST.
+// binds the session to the account when accounts and perUserBasicAuth are
+// on. The CSRF token comes first for an account login, which is itself a
+// POST.
 func (c *client) login(ctx context.Context, s *session) error {
 	step := func(r request, out any) error {
 		resp, err := c.send(ctx, s, r)
