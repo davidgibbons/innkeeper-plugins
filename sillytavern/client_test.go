@@ -3,7 +3,11 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/davidgibbons/innkeeper/protocol"
@@ -45,7 +49,7 @@ func TestLogsInOnceAndReusesTheSession(t *testing.T) {
 	for _, auth := range []string{"basic", "account"} {
 		t.Run(auth, func(t *testing.T) {
 			f := newFake(t)
-			f.accounts = true // with accounts on, basic auth needs GET /login to pick the account
+			f.accounts, f.perUserBasic = true, true // GET /login then picks the account for basic auth
 			c := newTestClient(f, auth)
 			for range 3 {
 				if err := list(c); err != nil {
@@ -117,7 +121,6 @@ func TestStopsAfterARejectedLogin(t *testing.T) {
 	}{
 		{"wrong account password", "account", "Incorrect credentials", func(f *fake) { f.password = "other" }},
 		{"wrong basic password", "basic", "username or password", func(f *fake) { f.basicPass = "other" }},
-		{"address not whitelisted", "account", "whitelist", func(f *fake) { f.refuse = true }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -128,7 +131,7 @@ func TestStopsAfterARejectedLogin(t *testing.T) {
 			if !strings.Contains(pe.Message, tc.want) {
 				t.Fatalf("error %q should say %q", pe.Message, tc.want)
 			}
-			if tc.want != "whitelist" && strings.Contains(pe.Message, "whitelist") {
+			if strings.Contains(pe.Message, "whitelist") {
 				t.Fatalf("error %q names the whitelist, which isn't a possible cause here", pe.Message)
 			}
 			sent := f.requests
@@ -142,6 +145,79 @@ func TestStopsAfterARejectedLogin(t *testing.T) {
 
 // Only a rejection by the server's login counts toward its lockout, so
 // anything else may be tried again.
+// A refused address costs no login attempt and is fixed in SillyTavern's
+// config, so the next call tries again.
+func TestAWhitelistRefusalDoesNotStopTheClient(t *testing.T) {
+	for _, auth := range []string{"basic", "account"} {
+		t.Run(auth, func(t *testing.T) {
+			f := newFake(t)
+			f.perUserBasic = true
+			c := newTestClient(f, auth)
+			f.refuse = true
+			pe := final(t, list(c))
+			if !strings.Contains(pe.Message, "whitelist") {
+				t.Fatalf("error %q should name the whitelist", pe.Message)
+			}
+			f.refuse = false
+			if err := list(c); err != nil {
+				t.Fatalf("after the address was listed: %v", err)
+			}
+		})
+	}
+}
+
+func TestBasicWithAccountsNeedsPerUserBasicAuth(t *testing.T) {
+	f := newFake(t)
+	f.accounts = true
+	pe := final(t, list(newTestClient(f, "basic")))
+	if !strings.Contains(pe.Message, "perUserBasicAuth") {
+		t.Fatalf("error %q should name perUserBasicAuth", pe.Message)
+	}
+}
+
+func TestARedirectIsFinalAndNamesTheTarget(t *testing.T) {
+	// Only the POST redirects, as an http-to-https rule in front of the API would for a call it can't serve.
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			_, _ = io.WriteString(w, `{"token":"t"}`)
+			return
+		}
+		http.Redirect(w, r, "https://st.example.com"+r.URL.Path, http.StatusMovedPermanently)
+	}))
+	defer proxy.Close()
+	pe := final(t, list(newClient(proxy.URL, "none", "", "")))
+	if !strings.Contains(pe.Message, "https://st.example.com/api/worldinfo/list") {
+		t.Fatalf("error %q", pe.Message)
+	}
+}
+
+func TestConcurrentCallsShareOneLogin(t *testing.T) {
+	f := newFake(t)
+	c := newTestClient(f, "account")
+	burst := func() {
+		var wg sync.WaitGroup
+		for range 8 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if err := list(c); err != nil {
+					t.Error(err)
+				}
+			}()
+		}
+		wg.Wait()
+	}
+	burst()
+	if f.logins != 1 {
+		t.Fatalf("%d logins, want 1", f.logins)
+	}
+	f.endSessions()
+	burst()
+	if f.logins != 2 {
+		t.Fatalf("%d logins after the sessions ended, want 2", f.logins)
+	}
+}
+
 func TestAnOddLoginFailureDoesNotStopTheClient(t *testing.T) {
 	f := newFake(t)
 	c := newTestClient(f, "account")

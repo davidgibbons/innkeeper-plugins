@@ -27,6 +27,7 @@ type fake struct {
 	basicUser    string // basicAuthMode, when set
 	basicPass    string
 	accounts     bool // enableUserAccounts
+	perUserBasic bool // perUserBasicAuth, which lets basic auth pick the account
 	handle       string
 	password     string
 	csrfDisabled bool
@@ -178,10 +179,10 @@ func (f *fake) private(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// GET /login binds the session to the account that basic auth names.
+// GET /login binds the session to the account that basic auth names, when perUserBasicAuth is on.
 func (f *fake) login(w http.ResponseWriter, r *http.Request) {
 	s := sessionOf(r)
-	if f.accounts && f.basicUser != "" && s.handle == "" {
+	if f.accounts && f.perUserBasic && f.basicUser != "" && s.handle == "" {
 		s.handle = f.basicUser
 		f.logins++
 	} else if !f.accounts {

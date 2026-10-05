@@ -36,6 +36,17 @@ type session struct {
 	csrf string
 }
 
+// sameHostSameMethod follows a redirect only where the call survives it. A
+// proxy's http-to-https 301 turns a POST into a GET, which SillyTavern
+// answers with a 404 that would read as a missing character.
+func sameHostSameMethod(req *http.Request, via []*http.Request) error {
+	last := via[len(via)-1]
+	if req.URL.Scheme == last.URL.Scheme && req.URL.Host == last.URL.Host && req.Method == last.Method {
+		return nil
+	}
+	return http.ErrUseLastResponse
+}
+
 func newClient(base, auth, username, password string) *client {
 	return &client{base: strings.TrimRight(base, "/"), auth: auth, username: username, password: password}
 }
@@ -70,7 +81,7 @@ func (c *client) upload(ctx context.Context, path string, fields map[string]stri
 	if err != nil {
 		return err
 	}
-	part.Write(file)
+	_, _ = part.Write(file)
 	if err := mw.Close(); err != nil {
 		return err
 	}
@@ -101,8 +112,12 @@ func (c *client) do(ctx context.Context, r request, out any) error {
 	what := r.method + " " + r.path
 	if resp.StatusCode == http.StatusForbidden {
 		c.drop(sess)
-		return protocol.NewError(-32000, what+": SillyTavern answered 403 on a fresh login. Either its whitelist "+
-			"doesn't include this server's address, it refused the CSRF token, or the account is disabled", false)
+		msg := what + ": SillyTavern answered 403 on a fresh login. Either its whitelist " +
+			"doesn't include this server's address, it refused the CSRF token, or the account is disabled"
+		if c.auth == "basic" {
+			msg += ". With user accounts on, basic mode needs perUserBasicAuth in SillyTavern's config"
+		}
+		return protocol.NewError(-32000, msg, false)
 	}
 	return decode(resp, what, out)
 }
@@ -139,6 +154,9 @@ func decode(resp *http.Response, what string, out any) error {
 		return protocol.NewError(protocol.CodeRemoteNotFound, what+": not found", false)
 	case resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests:
 		return protocol.NewError(-32000, fmt.Sprintf("%s: %s: %s", what, resp.Status, snippet(body)), true)
+	case resp.StatusCode >= 300 && resp.StatusCode < 400:
+		return protocol.NewError(-32000, fmt.Sprintf("%s: the url redirects to %s; set url to the final address",
+			what, resp.Header.Get("Location")), false)
 	case resp.StatusCode >= 300:
 		return protocol.NewError(-32000, fmt.Sprintf("%s: %s: %s", what, resp.Status, snippet(body)), false)
 	}
@@ -173,14 +191,17 @@ func (c *client) session(ctx context.Context, stale *session) (s *session, fresh
 	if c.auth != "none" && c.auth != "basic" && c.auth != "account" {
 		return nil, false, protocol.NewError(protocol.CodeInvalidParams, fmt.Sprintf("auth is %q, want none, basic, or account", c.auth), false)
 	}
-	if c.base == "" || c.auth != "none" && (c.username == "" || c.password == "") {
-		return nil, false, protocol.NewError(-32000, "set the instance's url and username config and its password secret", false)
+	if c.base == "" {
+		return nil, false, protocol.NewError(-32000, "set the instance's url config", false)
+	}
+	if c.auth != "none" && (c.username == "" || c.password == "") {
+		return nil, false, protocol.NewError(-32000, "set the instance's username config and its password secret", false)
 	}
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return nil, false, err
 	}
-	s = &session{http: &http.Client{Jar: jar, Timeout: time.Minute}}
+	s = &session{http: &http.Client{Jar: jar, Timeout: time.Minute, CheckRedirect: sameHostSameMethod}}
 	if err := c.login(ctx, s); err != nil {
 		var rej *rejection
 		if errors.As(err, &rej) {
@@ -193,8 +214,8 @@ func (c *client) session(ctx context.Context, stale *session) (s *session, fresh
 	return s, true, nil
 }
 
-// rejection is the server's refusal of the login itself. Retrying risks its
-// lockout, so only this latches the client.
+// rejection is the server's refusal of the login's credentials. Retrying
+// risks its lockout, so only this latches the client.
 type rejection struct {
 	status int
 	step   string
@@ -202,17 +223,14 @@ type rejection struct {
 }
 
 func (e *rejection) Error() string {
-	switch {
-	case e.status == http.StatusUnauthorized:
+	if e.status == http.StatusUnauthorized {
 		return "SillyTavern rejected the username or password at " + e.step
-	case e.step == "POST /api/users/login":
-		return "SillyTavern rejected the account login: " + e.body
 	}
-	return "SillyTavern answered 403 at " + e.step + ", so this server's address is probably not in its whitelist"
+	return "SillyTavern rejected the account login: " + e.body
 }
 
 // login makes s a session SillyTavern accepts. For basic auth, GET /login
-// binds the session to the account when accounts are on. The CSRF token comes
+// binds the session to the account when accounts and perUserBasicAuth are on. The CSRF token comes
 // first for an account login, which is itself a POST.
 func (c *client) login(ctx context.Context, s *session) error {
 	step := func(r request, out any) error {
@@ -221,9 +239,16 @@ func (c *client) login(ctx context.Context, s *session) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		forbidden := resp.StatusCode == http.StatusForbidden
+		if resp.StatusCode == http.StatusUnauthorized || forbidden && r.method == http.MethodPost {
 			b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 			return &rejection{resp.StatusCode, r.method + " " + r.path, snippet(b)}
+		}
+		// A 403 before the login is the whitelist. It costs no login attempt and
+		// is fixed in SillyTavern's config, so the client may try again.
+		if forbidden {
+			return protocol.NewError(-32000, "SillyTavern answered 403 at "+r.path+": add this server's address to "+
+				"whitelist in its config.yaml, or turn whitelistMode off", false)
 		}
 		return decode(resp, "login: "+r.method+" "+r.path, out)
 	}
