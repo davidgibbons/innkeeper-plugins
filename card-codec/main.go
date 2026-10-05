@@ -5,20 +5,16 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"sync/atomic"
 
 	"github.com/davidgibbons/innkeeper-plugins/card"
+	"github.com/davidgibbons/innkeeper-plugins/internal/pluginio"
 	"github.com/davidgibbons/innkeeper/protocol"
 )
 
 const version = "0.1.0"
-
-// maxInput caps the files the plugin reads. Card PNGs are a few MB at most.
-const maxInput = 32 << 20
 
 func main() {
 	// Set by initialize; requests run on other goroutines.
@@ -55,7 +51,7 @@ func decode(tmp string, params json.RawMessage) (any, error) {
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, invalid(err)
 	}
-	b, err := readFile(p.Path)
+	b, err := pluginio.ReadFile(p.Path)
 	if err != nil {
 		return nil, invalid(err)
 	}
@@ -65,7 +61,7 @@ func decode(tmp string, params json.RawMessage) (any, error) {
 	}
 	res := protocol.CodecDecodeResult{Card: c}
 	if img != nil {
-		if res.Avatar, err = writeTmp(tmp, "avatar-*.png", img); err != nil {
+		if res.Avatar, err = pluginio.WriteTmp(tmp, "avatar-*.png", img); err != nil {
 			return nil, err
 		}
 	}
@@ -80,7 +76,7 @@ func encode(tmp string, params json.RawMessage) (any, error) {
 	var avatar []byte
 	if p.Avatar != "" {
 		var err error
-		if avatar, err = readFile(p.Avatar); err != nil {
+		if avatar, err = pluginio.ReadFile(p.Avatar); err != nil {
 			return nil, err
 		}
 	}
@@ -88,44 +84,11 @@ func encode(tmp string, params json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, invalid(err)
 	}
-	path, err := writeTmp(tmp, "card-*."+ext, out)
+	path, err := pluginio.WriteTmp(tmp, "card-*."+ext, out)
 	if err != nil {
 		return nil, err
 	}
 	return protocol.CodecEncodeResult{Path: path, Extension: ext}, nil
-}
-
-func readFile(path string) ([]byte, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	b, err := io.ReadAll(io.LimitReader(f, maxInput+1))
-	if err == nil && len(b) > maxInput {
-		err = fmt.Errorf("%s is over %d MiB", path, maxInput>>20)
-	}
-	return b, err
-}
-
-// writeTmp writes b to a new file in tmp and returns its path.
-func writeTmp(tmp, pattern string, b []byte) (string, error) {
-	if tmp == "" {
-		return "", errors.New("initialize sent no blob_tmp")
-	}
-	f, err := os.CreateTemp(tmp, pattern)
-	if err != nil {
-		return "", err
-	}
-	_, err = f.Write(b)
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		os.Remove(f.Name())
-		return "", err
-	}
-	return f.Name(), nil
 }
 
 func invalid(err error) error {
