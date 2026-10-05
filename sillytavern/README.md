@@ -45,6 +45,8 @@ or secrets.
 - The avatar, uploaded only when it changes.
 - Lorebooks as world info files, linked by the character's world setting.
   A character has one lorebook; a card with two fails its push.
+  A push links the character to its pushed lorebook, or clears the link when
+  the card has none, so a world set in SillyTavern is replaced.
   Character filters on world info entries don't sync.
 
 The plugin keeps its own keys in `extensions.innkeeper` on characters, world
@@ -63,3 +65,6 @@ show such overwrites as changes.
 Point only one Innkeeper at a SillyTavern user. The plugin finds its earlier
 copies by keys that are unique only within one Innkeeper, so a second one
 could take over the first's characters and world files.
+
+Two new lorebooks with the same name, pushed at the same moment from
+Innkeeper's API and its worker, can land in one world file.
