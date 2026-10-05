@@ -128,3 +128,81 @@ func TestImportRejects(t *testing.T) {
 		}
 	}
 }
+
+// writeFolder makes a folder from name to content. Content starting with
+// "testdata/" is that card/testdata file instead.
+func writeFolder(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for name, content := range files {
+		b := []byte(content)
+		if rest, ok := strings.CutPrefix(content, "testdata/"); ok {
+			b = testdata(t, rest)
+		}
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+func TestImportFolder(t *testing.T) {
+	dir := writeFolder(t, map[string]string{
+		"sub/seraphina.png": "testdata/v3-seraphina.png",
+		"seraphina.json":    "testdata/v2-seraphina.json",
+		"eldoria.json":      "testdata/eldoria.lorebook.json",
+		"junk.json":         `{"theme": "dark"}`,
+		"notes.txt":         "not a card",
+	})
+	outside := writeFolder(t, map[string]string{"secret.json": "testdata/v2-seraphina.json"})
+	if err := os.Symlink(filepath.Join(outside, "secret.json"), filepath.Join(dir, "link.json")); err != nil {
+		t.Fatal(err)
+	}
+	tmp := t.TempDir()
+	e := env{folder: dir, blobTmp: tmp}
+
+	rec, err := startImport(t, e, `{}`, `null`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"lorebook eldoria.json", "card seraphina.json", "card sub/seraphina.png"}
+	if got := rec.items(); !slices.Equal(got, want) {
+		t.Fatalf("emitted %q, want %q", got, want)
+	}
+	if book := rec.sent[0].(protocol.EmitLorebook).Lorebook; !strings.Contains(string(book), `"name":"eldoria"`) {
+		t.Errorf("lorebook not named from its file: %.200s", book)
+	}
+	var progress protocol.Progress
+	var cp protocol.Checkpoint
+	for _, p := range rec.sent {
+		switch p := p.(type) {
+		case protocol.Progress:
+			progress = p
+		case protocol.Checkpoint:
+			cp = p
+		case protocol.EmitCard:
+			if strings.HasSuffix(p.Item, ".png") && filepath.Dir(p.Avatar) != tmp {
+				t.Errorf("avatar %q is not in blob_tmp", p.Avatar)
+			}
+		}
+	}
+	if progress.Done != 4 || progress.Total != 4 || !strings.Contains(progress.Message, "1 file") {
+		t.Errorf("last progress = %+v; want 4 of 4, one file skipped", progress)
+	}
+	if string(cp.Checkpoint) != `{"last":"sub/seraphina.png"}` {
+		t.Errorf("last checkpoint = %s", cp.Checkpoint)
+	}
+
+	rec, err = startImport(t, e, `{}`, `{"last": "junk.json"}`)
+	if want := []string{"card seraphina.json", "card sub/seraphina.png"}; err != nil || !slices.Equal(rec.items(), want) {
+		t.Errorf("resumed import emitted %q, %v; want %q", rec.items(), err, want)
+	}
+	rec, err = startImport(t, e, `{"path": "sub"}`, `null`)
+	if want := []string{"card sub/seraphina.png"}; err != nil || !slices.Equal(rec.items(), want) {
+		t.Errorf("subfolder import emitted %q, %v; want %q", rec.items(), err, want)
+	}
+}
