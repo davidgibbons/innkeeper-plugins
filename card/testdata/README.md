@@ -6,3 +6,4 @@
 - `v2-seraphina.json`: that file's V2 card as JSON.
 
 Generate the `.want.json` files with `go test ./card -run TestGolden -update`. Review them; don't hand-edit.
+- `eldoria.lorebook.json`: SillyTavern's sample world info, `default/content/Eldoria.json` in the same repo. `TestGolden` skips `*.lorebook.json`; `TestLorebookGolden` reads them.

@@ -28,7 +28,7 @@ func TestGolden(t *testing.T) {
 	}
 	n := 0
 	for _, f := range files {
-		if strings.HasSuffix(f, ".want.json") || strings.HasSuffix(f, ".md") {
+		if strings.HasSuffix(f, ".want.json") || strings.HasSuffix(f, ".md") || strings.HasSuffix(f, ".lorebook.json") {
 			continue
 		}
 		n++
