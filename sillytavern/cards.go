@@ -193,6 +193,13 @@ func (p *plugin) updateCharacter(ctx context.Context, id string, data map[string
 	}
 	unsetMissing(data, curData)
 	delete(ext, "fav")
+	// SillyTavern's merge turns a stored non-object into {} or junk instead of
+	// taking an object sent for it, so those go first.
+	if fix := clashes(data, curData); len(fix) > 0 {
+		if err := p.c.call(ctx, "/api/characters/merge-attributes", map[string]any{"avatar": id, "data": fix}, nil); err != nil {
+			return err
+		}
+	}
 	body := map[string]any{"avatar": id, "data": data, "creatorcomment": data["creator_notes"]}
 	for _, k := range v1Fields {
 		body[k] = data[k]
@@ -235,6 +242,25 @@ func unsetMissing(next, cur map[string]any) {
 			unsetMissing(nm, cm)
 		}
 	}
+}
+
+// clashes returns, as a merge body that unsets them, the paths where next
+// has an object and cur a value that isn't one.
+func clashes(next, cur map[string]any) map[string]any {
+	out := map[string]any{}
+	for k, v := range next {
+		nm, ok := v.(map[string]any)
+		cv, in := cur[k]
+		if !ok || !in {
+			continue
+		}
+		if cm, ok := cv.(map[string]any); !ok {
+			out[k] = unset
+		} else if sub := clashes(nm, cm); len(sub) > 0 {
+			out[k] = sub
+		}
+	}
+	return out
 }
 
 // cardPNG writes data as a card PNG with the avatar at path, or a placeholder.

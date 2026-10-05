@@ -348,19 +348,43 @@ func (f *fake) charactersImport(w http.ResponseWriter, r *http.Request) {
 	reply(w, 200, map[string]any{"file_name": stem})
 }
 
-// deepMerge replaces arrays and scalars and merges objects, as util.js does.
-func deepMerge(target, source map[string]any) map[string]any {
-	out := map[string]any{}
-	for k, v := range target {
-		out[k] = v
+// deepMerge is util.js's: arrays and scalars replace, objects merge, and an
+// object merged into a stored non-object yields a copy of that value as an
+// object, dropping the source.
+func deepMerge(target, source any) map[string]any {
+	out := assign(target)
+	tm, tok := target.(map[string]any)
+	sm, sok := source.(map[string]any)
+	if !tok || !sok {
+		return out
 	}
-	for k, v := range source {
-		sm, isObj := v.(map[string]any)
-		tm, targetObj := target[k].(map[string]any)
-		if isObj && targetObj {
-			out[k] = deepMerge(tm, sm)
+	for k, v := range sm {
+		tv, in := tm[k]
+		if _, isObj := v.(map[string]any); isObj && in {
+			out[k] = deepMerge(tv, v)
 		} else {
 			out[k] = v
+		}
+	}
+	return out
+}
+
+// assign is Object.assign({}, v): null and numbers give {}, strings and
+// arrays give their elements keyed by index.
+func assign(v any) map[string]any {
+	out := map[string]any{}
+	switch v := v.(type) {
+	case map[string]any:
+		for k, e := range v {
+			out[k] = e
+		}
+	case string:
+		for i, r := range []rune(v) {
+			out[fmt.Sprint(i)] = string(r)
+		}
+	case []any:
+		for i, e := range v {
+			out[fmt.Sprint(i)] = e
 		}
 	}
 	return out

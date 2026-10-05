@@ -185,6 +185,20 @@ func TestUpdateCharacter(t *testing.T) {
 	}
 }
 
+// SillyTavern's merge can't put an object where a stored value isn't one.
+func TestAnObjectReplacesAStoredNonObject(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(f)
+	id := put(t, p, protocol.TargetPutParams{Card: testCard(nil), Key: "k"})
+	_, _, ext := stored(f, id)
+	ext["foo"], ext["bar"] = nil, "xy"
+	put(t, p, protocol.TargetPutParams{Card: testCard(map[string]any{"extensions": map[string]any{
+		"foo": map[string]any{"k": 1}, "bar": map[string]any{"k": 2}}}), RemoteID: id})
+	if _, _, ext := stored(f, id); fmt.Sprint(ext["foo"], ext["bar"]) != "map[k:1] map[k:2]" {
+		t.Fatalf("extensions = %v", ext)
+	}
+}
+
 func TestUpdateOfAMissingCharacter(t *testing.T) {
 	f := newFake(t)
 	if err := putErr(newPlugin(f), protocol.TargetPutParams{Card: testCard(nil), RemoteID: "Gone.png"}); !notFound(err) || len(f.merges) != 0 {
