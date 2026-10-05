@@ -206,3 +206,22 @@ func TestImportFolder(t *testing.T) {
 		t.Errorf("subfolder import emitted %q, %v; want %q", rec.items(), err, want)
 	}
 }
+
+func TestImportFolderSkipsUnreadableSubfolder(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads every folder")
+	}
+	dir := writeFolder(t, map[string]string{
+		"locked/a.json":  "testdata/v2-seraphina.json",
+		"seraphina.json": "testdata/v2-seraphina.json",
+	})
+	locked := filepath.Join(dir, "locked")
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(locked, 0o755) })
+	rec, err := startImport(t, env{folder: dir, blobTmp: t.TempDir()}, `{}`, `null`)
+	if want := []string{"card seraphina.json"}; err != nil || !slices.Equal(rec.items(), want) {
+		t.Fatalf("emitted %q, %v; want %q", rec.items(), err, want)
+	}
+}

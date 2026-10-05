@@ -168,5 +168,6 @@
       "use_regex": true
     }
   ],
+  "extensions": {},
   "name": "Eldoria"
 }

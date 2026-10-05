@@ -134,6 +134,11 @@ func (im *importer) importFolder(ctx context.Context, dir, last string) error {
 	// Walk first, for a progress total and a fixed order to resume in.
 	var files []string
 	err = fs.WalkDir(root.FS(), dir, func(name string, d fs.DirEntry, err error) error {
+		if err != nil && name != dir {
+			// One unreadable subfolder shouldn't stop the rest of the import.
+			log.Printf("skipped %s: %v", name, err)
+			return nil
+		}
 		if err != nil {
 			return err
 		}

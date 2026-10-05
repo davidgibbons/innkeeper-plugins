@@ -80,6 +80,10 @@ func DecodeLorebook(b []byte, name string) (json.RawMessage, error) {
 	if json.Unmarshal(top["name"], &current) != nil || current == "" {
 		top["name"], _ = json.Marshal(name)
 	}
+	// CCv3 requires extensions on a character_book.
+	if e := bytes.TrimSpace(top["extensions"]); len(e) == 0 || e[0] != '{' {
+		top["extensions"] = json.RawMessage("{}")
+	}
 	return json.Marshal(top)
 }
 
@@ -106,6 +110,10 @@ func fromWorldInfo(raw json.RawMessage) ([]map[string]any, error) {
 		e := map[string]any{"keys": []string{}, "content": "", "enabled": true, "insertion_order": 100,
 			"use_regex": true, "extensions": ext}
 		for k, v := range wi {
+			// CCv3 forbids null in the fields these map to, so keep the defaults.
+			if string(v) == "null" && slices.Contains([]string{"uid", "key", "keysecondary", "order", "comment", "content", "constant", "selective", "disable"}, k) {
+				continue
+			}
 			switch k {
 			case "extensions":
 			case "uid":

@@ -52,7 +52,7 @@ func TestLorebookGolden(t *testing.T) {
 }
 
 func TestDecodeLorebookShapes(t *testing.T) {
-	book := `{"name": "B", "entries": [{"keys": ["k"], "content": "c", "extensions": {}, "enabled": true, "insertion_order": 0, "use_regex": false}]}`
+	book := `{"name": "B", "extensions": {}, "entries": [{"keys": ["k"], "content": "c", "extensions": {}, "enabled": true, "insertion_order": 0, "use_regex": false}]}`
 	for name, in := range map[string]string{
 		"character_book": book,
 		"lorebook_v3":    `{"spec": "lorebook_v3", "data": ` + book + `}`,
@@ -63,7 +63,7 @@ func TestDecodeLorebookShapes(t *testing.T) {
 		}
 	}
 	got, err := DecodeLorebook([]byte(`{"entries": []}`), "file")
-	if err != nil || !strings.Contains(string(got), `"name":"file"`) {
+	if err != nil || !strings.Contains(string(got), `"name":"file"`) || !strings.Contains(string(got), `"extensions":{}`) {
 		t.Errorf("unnamed book: %v %s", err, got)
 	}
 }
@@ -71,7 +71,8 @@ func TestDecodeLorebookShapes(t *testing.T) {
 func TestDecodeWorldInfo(t *testing.T) {
 	in := `{"entries": {
 		"10": {"uid": 10, "key": ["b"], "content": "B", "disable": true, "position": 1, "excludeRecursion": true, "addMemo": true},
-		"2": {"uid": 2, "key": ["a"], "content": "A", "position": 0, "extensions": null}}}`
+		"2": {"uid": 2, "key": ["a"], "content": "A", "position": 0, "extensions": null},
+		"30": {"uid": 30, "key": null, "content": null}}}`
 	got, err := DecodeLorebook([]byte(in), "world")
 	if err != nil {
 		t.Fatal(err)
@@ -83,12 +84,15 @@ func TestDecodeWorldInfo(t *testing.T) {
 	if err := json.Unmarshal(got, &book); err != nil {
 		t.Fatal(err)
 	}
-	if book.Name != "world" || len(book.Entries) != 2 || book.Entries[0]["content"] != "A" {
+	if book.Name != "world" || len(book.Entries) != 3 || book.Entries[0]["content"] != "A" {
 		t.Fatalf("book = %s; want name world and entries in uid order", got)
 	}
 	a, b := book.Entries[0], book.Entries[1]
 	if a["position"] != "before_char" || a["enabled"] != true {
 		t.Errorf("entry 2 = %v", a)
+	}
+	if c := book.Entries[2]; c["keys"] == nil || c["content"] != "" {
+		t.Errorf("entry 30 = %v; nulls must keep the defaults", c)
 	}
 	ext := b["extensions"].(map[string]any)
 	if b["id"] != 10.0 || b["enabled"] != false || b["position"] != "after_char" || b["use_regex"] != true ||
