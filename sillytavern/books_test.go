@@ -240,3 +240,13 @@ func TestFileIDIsSillyTavernsFileName(t *testing.T) {
 		}
 	}
 }
+
+func TestAnEntryWithoutEnabledIsPushedEnabled(t *testing.T) {
+	f := newFake(t)
+	e := testEntry(1.0, "anvil", "It rings.", 1)
+	delete(e, "enabled")
+	id := putBook(t, newPlugin(f), "k", testBook("Forge lore", e))
+	if st := object(object(f.worlds[id]["entries"])["0"]); st["disable"] != false {
+		t.Fatalf("stored %v", st)
+	}
+}

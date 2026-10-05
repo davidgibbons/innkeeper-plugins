@@ -231,7 +231,7 @@ func toWorldEntry(e map[string]any, index int) map[string]any {
 		"content":      e["content"],
 		"constant":     e["constant"] == true,
 		"selective":    e["selective"] == true,
-		"disable":      e["enabled"] != true,
+		"disable":      e["enabled"] == false, // SillyTavern's import disables it; silently hidden lore is worse
 		"addMemo":      comment != "",
 		"position":     position,
 	}
