@@ -1,2 +1,3 @@
 # Plugin binaries, built by make build into each plugin's folder.
 /card-codec/card-codec
+/password-login/password-login

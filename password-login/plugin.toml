@@ -1,0 +1,6 @@
+name = "password-login"
+version = "0.1.0"
+protocol = 1
+command = ["./password-login"]
+capabilities = ["auth"]
+secrets = ["password_hash"]
