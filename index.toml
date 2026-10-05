@@ -16,3 +16,11 @@ version = "0.1.0"
 protocol = 1
 capabilities = ["auth"]
 description = "Log in as the owner with one password."
+
+[[plugin]]
+name = "card-import"
+path = "card-import"
+version = "0.1.0"
+protocol = 1
+capabilities = ["import"]
+description = "Import character cards and lorebooks from a folder or an uploaded file."
