@@ -297,8 +297,9 @@ func toWorldEntry(e map[string]any, index int) map[string]any {
 
 // readBackDiffs lists the fields of orig that fromWorldEntry(st) reads back
 // differently, each with a hash of how it reads back and the pushed value, or
-// no value if orig lacks it. content is left out: SillyTavern stores it as
-// pushed, and a copy would go stale after an edit there.
+// no value if orig lacks it. content is left out so it is never copied:
+// SillyTavern holds any string as pushed, so this only skips a missing or
+// non-string content, which reads back as "".
 func readBackDiffs(orig, st map[string]any) map[string]any {
 	// Through JSON, so numbers compare as a stored file's do.
 	var stored map[string]any

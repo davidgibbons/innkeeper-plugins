@@ -55,8 +55,8 @@ or secrets.
   SillyTavern fills in with a default, such as an empty `secondary_keys`,
   reads back as pushed until a save in SillyTavern changes it; its browser
   save adds defaults to every entry.
-- Importing from SillyTavern takes each character's image and its world
-  link, so imported cards keep both.
+- Importing from SillyTavern takes each character's world link and its
+  image, except the placeholder of a card pushed without one.
 
 The plugin keeps its own keys in `extensions.innkeeper` on characters, world
 files, and entries. Leave them alone. SillyTavern's "Duplicate" copies them, so
