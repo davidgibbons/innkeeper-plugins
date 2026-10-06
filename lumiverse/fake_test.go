@@ -25,6 +25,8 @@ type fake struct {
 	books      map[string]map[string]any
 	entries    map[string][]map[string]any // by book ID
 	avatars    int
+	avatarGets int
+	images     map[string][]byte // by character ID
 	nextID     int
 }
 
@@ -32,7 +34,7 @@ const fakePassword = "hunter2"
 
 func newFake(t *testing.T) *fake {
 	f := &fake{characters: map[string]map[string]any{}, books: map[string]map[string]any{},
-		entries: map[string][]map[string]any{}}
+		entries: map[string][]map[string]any{}, images: map[string][]byte{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/auth/sign-in/{how}", f.signIn)
 	api := map[string]http.HandlerFunc{
@@ -41,6 +43,7 @@ func newFake(t *testing.T) *fake {
 		"GET /characters/{id}":                f.getCharacter,
 		"PUT /characters/{id}":                f.putCharacter,
 		"POST /characters/{id}/avatar":        f.avatar,
+		"GET /characters/{id}/avatar":         f.getAvatar,
 		"GET /characters/{id}/export":         f.exportCharacter,
 		"POST /world-books":                   f.createBook,
 		"GET /world-books":                    f.listBooks,
@@ -202,6 +205,7 @@ func (f *fake) avatar(w http.ResponseWriter, r *http.Request) {
 	}
 	raw, _ := io.ReadAll(file)
 	f.avatars++
+	f.images[r.PathValue("id")] = raw
 	c["image_id"] = fmt.Sprintf("img-%d-%d", f.avatars, len(raw))
 	// As replaceCharacterAvatar does: the old crop goes with the old image.
 	ext := object(c["extensions"])
@@ -209,6 +213,17 @@ func (f *fake) avatar(w http.ResponseWriter, r *http.Request) {
 	delete(ext, "original_image_id")
 	c["extensions"] = ext
 	reply(w, 200, c)
+}
+
+func (f *fake) getAvatar(w http.ResponseWriter, r *http.Request) {
+	f.avatarGets++
+	img, ok := f.images[r.PathValue("id")]
+	if !ok {
+		reply(w, 404, map[string]any{"error": "Not found"})
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	_, _ = w.Write(img)
 }
 
 func (f *fake) exportCharacter(w http.ResponseWriter, r *http.Request) {

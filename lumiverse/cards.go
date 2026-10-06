@@ -283,7 +283,21 @@ func (p *plugin) get(ctx context.Context, params json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return protocol.TargetGetResult{Card: raw}, nil
+	res := protocol.TargetGetResult{Card: raw}
+	if in.Avatar {
+		var img []byte
+		err := p.c.call(ctx, "GET", "/characters/"+url.PathEscape(in.RemoteID)+"/avatar", nil, &img)
+		switch {
+		case notFound(err):
+		case err != nil:
+			return nil, err
+		default:
+			if res.Avatar, err = pluginio.WriteTmp(p.blobTmp, "avatar-*"+avatarExt(img), img); err != nil {
+				return nil, protocol.NewError(-32000, "write the avatar: "+err.Error(), false)
+			}
+		}
+	}
+	return res, nil
 }
 
 func notFound(err error) bool {

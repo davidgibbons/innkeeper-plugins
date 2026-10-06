@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -147,5 +148,39 @@ func TestListCharacters(t *testing.T) {
 	}
 	if len(res.Items) != 1001 || len(seen) != 1001 {
 		t.Fatalf("listed %d items, %d distinct", len(res.Items), len(seen))
+	}
+}
+
+func TestGetAvatar(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(t, f, "owner", fakePassword)
+	id := put(t, p, protocol.TargetPutParams{Card: card(nil), Key: "k", Avatar: avatarFile(t, "abc")})
+	res, err := p.get(context.Background(), mustJSON(t, protocol.TargetGetParams{RemoteID: id, Avatar: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := res.(protocol.TargetGetResult).Avatar
+	img, err := os.ReadFile(path)
+	if filepath.Dir(path) != p.blobTmp || err != nil || !bytes.Equal(img, f.images[id]) {
+		t.Fatalf("avatar %q: %v", path, err)
+	}
+}
+
+func TestGetNoAvatar(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(t, f, "owner", fakePassword)
+	id := put(t, p, protocol.TargetPutParams{Card: card(nil), Key: "k"})
+	res, err := p.get(context.Background(), mustJSON(t, protocol.TargetGetParams{RemoteID: id, Avatar: true}))
+	if err != nil || res.(protocol.TargetGetResult).Avatar != "" {
+		t.Fatalf("avatar %q: %v", res.(protocol.TargetGetResult).Avatar, err)
+	}
+}
+
+func TestGetWithoutAvatarAsksForNone(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(t, f, "owner", fakePassword)
+	id := put(t, p, protocol.TargetPutParams{Card: card(nil), Key: "k", Avatar: avatarFile(t, "abc")})
+	if _, err := p.get(context.Background(), mustJSON(t, protocol.TargetGetParams{RemoteID: id})); err != nil || f.avatarGets != 0 {
+		t.Fatalf("%d avatar requests: %v", f.avatarGets, err)
 	}
 }
