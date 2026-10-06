@@ -276,6 +276,18 @@ func toWorldEntry(e map[string]any, index int) map[string]any {
 			stash[k] = v
 		}
 	}
+	pushed := map[string]any{}
+	for k, v := range e {
+		pushed[k] = v
+	}
+	if _, ok := e["extensions"]; ok {
+		pushedExt := map[string]any{}
+		for k, v := range ext {
+			pushedExt[k] = v
+		}
+		pushed["extensions"] = pushedExt
+	}
+	stash["entry"] = pushed
 	ext[innkeeperKey] = stash
 	out["extensions"] = ext
 	return out
@@ -331,7 +343,7 @@ func (p *plugin) getLorebook(ctx context.Context, params json.RawMessage) (any, 
 	})
 	entries := make([]any, len(stored))
 	for i, it := range stored {
-		entries[i] = fromWorldEntry(it.e)
+		entries[i] = asPushed(it.e)
 	}
 	book["entries"] = entries
 	raw, err := json.Marshal(book)
@@ -415,6 +427,47 @@ func fromWorldEntry(st map[string]any) map[string]any {
 		}
 	}
 	return e
+}
+
+// asPushed is fromWorldEntry(st) with each field SillyTavern hasn't changed
+// since the push given back as pushed, so a field it can't hold or fills in
+// with a default reads back unchanged.
+func asPushed(st map[string]any) map[string]any {
+	e := fromWorldEntry(st)
+	orig, ok := object(object(st["extensions"])[innkeeperKey])["entry"].(map[string]any)
+	if !ok {
+		return e
+	}
+	// Through JSON, so numbers compare as SillyTavern's do.
+	var stored map[string]any
+	raw, _ := json.Marshal(toWorldEntry(orig, int(number(st["uid"]))))
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		return e
+	}
+	sent := fromWorldEntry(stored)
+	keys := map[string]bool{}
+	for _, m := range []map[string]any{e, sent, orig} {
+		for k := range m {
+			keys[k] = true
+		}
+	}
+	for k := range keys {
+		if !sameJSON(e[k], sent[k]) {
+			continue
+		}
+		if v, ok := orig[k]; ok {
+			e[k] = v
+		} else {
+			delete(e, k)
+		}
+	}
+	return e
+}
+
+func sameJSON(a, b any) bool {
+	ra, errA := json.Marshal(a)
+	rb, errB := json.Marshal(b)
+	return errA == nil && errB == nil && bytes.Equal(ra, rb)
 }
 
 func (p *plugin) listLorebooks(ctx context.Context) (protocol.TargetListResult, error) {

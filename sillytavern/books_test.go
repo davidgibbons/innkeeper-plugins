@@ -167,6 +167,24 @@ func TestWorldFileRoundTrips(t *testing.T) {
 	}
 }
 
+func TestAnEntryReadsBackAsPushed(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(f)
+	// No secondary_keys, comment, or extensions, and a field SillyTavern has no place for.
+	e := map[string]any{"keys": []any{"anvil"}, "content": "It rings.", "name": "anvil", "mode": "normal"}
+	book := map[string]any{"entries": []any{e}}
+	id := putBook(t, p, "k", book)
+	if got := getBook(t, p, id); !reflect.DeepEqual(got, normal(t, book)) {
+		t.Fatalf("read back\n%s\nwant\n%s", mustJSON(t, got), mustJSON(t, book))
+	}
+	// A field changed in SillyTavern reads back as SillyTavern has it.
+	object(object(f.worlds[id]["entries"])["0"])["content"] = "It sings."
+	got := object(getBook(t, p, id)["entries"].([]any)[0])
+	if got["content"] != "It sings." || got["mode"] != "normal" || got["secondary_keys"] != nil {
+		t.Fatalf("entry %v", got)
+	}
+}
+
 // addMissingWorldInfoFields is what SillyTavern's browser does to every entry
 // before it saves a world file.
 func addMissingWorldInfoFields(e map[string]any) {

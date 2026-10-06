@@ -48,6 +48,8 @@ or secrets.
   A push links the character to its pushed lorebook, or clears the link when
   the card has none, so a world set in SillyTavern is replaced.
   Character filters on world info entries don't sync.
+  Entry fields SillyTavern has no place for, such as RisuAI's `mode`, are
+  kept in the plugin's keys and read back as pushed.
 - Importing from SillyTavern takes each character's image and its world
   link, so imported cards keep both.
 
