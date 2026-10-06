@@ -285,19 +285,27 @@ func (p *plugin) get(ctx context.Context, params json.RawMessage) (any, error) {
 	}
 	res := protocol.TargetGetResult{Card: raw}
 	if in.Avatar {
-		var img []byte
-		err := p.c.call(ctx, "GET", "/characters/"+url.PathEscape(in.RemoteID)+"/avatar", nil, &img)
-		switch {
-		case notFound(err):
-		case err != nil:
+		if res.Avatar, err = p.avatar(ctx, in.RemoteID); err != nil {
 			return nil, err
-		default:
-			if res.Avatar, err = pluginio.WriteTmp(p.blobTmp, "avatar-*"+avatarExt(img), img); err != nil {
-				return nil, protocol.NewError(-32000, "write the avatar: "+err.Error(), false)
-			}
 		}
 	}
 	return res, nil
+}
+
+// avatar writes character id's image to blob_tmp and returns its path, or "" when it has none.
+func (p *plugin) avatar(ctx context.Context, id string) (string, error) {
+	var img []byte
+	if err := p.c.call(ctx, "GET", "/characters/"+url.PathEscape(id)+"/avatar", nil, &img); err != nil {
+		if notFound(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	path, err := pluginio.WriteTmp(p.blobTmp, "avatar-*"+avatarExt(img), img)
+	if err != nil {
+		return "", protocol.NewError(-32000, "write the avatar: "+err.Error(), false)
+	}
+	return path, nil
 }
 
 func notFound(err error) bool {

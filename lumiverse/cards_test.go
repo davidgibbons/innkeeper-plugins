@@ -151,7 +151,7 @@ func TestListCharacters(t *testing.T) {
 	}
 }
 
-func TestGetAvatar(t *testing.T) {
+func TestGetWritesTheAvatarToBlobTmp(t *testing.T) {
 	f := newFake(t)
 	p := newPlugin(t, f, "owner", fakePassword)
 	id := put(t, p, protocol.TargetPutParams{Card: card(nil), Key: "k", Avatar: avatarFile(t, "abc")})
@@ -160,23 +160,59 @@ func TestGetAvatar(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := res.(protocol.TargetGetResult).Avatar
+	if filepath.Dir(path) != p.blobTmp {
+		t.Errorf("avatar %q is not under %q", path, p.blobTmp)
+	}
+	if filepath.Ext(path) != ".png" {
+		t.Errorf("avatar %q is not a .png", path)
+	}
 	img, err := os.ReadFile(path)
-	if filepath.Dir(path) != p.blobTmp || err != nil || !bytes.Equal(img, f.images[id]) {
-		t.Fatalf("avatar %q: %v", path, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(img, f.images[id]) {
+		t.Errorf("avatar bytes %q, want %q", img, f.images[id])
 	}
 }
 
-func TestGetNoAvatar(t *testing.T) {
+func TestGetNamesAJpegAvatarByItsType(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(t, f, "owner", fakePassword)
+	id := put(t, p, protocol.TargetPutParams{Card: card(nil), Key: "k"})
+	f.images[id] = []byte("\xff\xd8\xff jpeg")
+	res, err := p.get(context.Background(), mustJSON(t, protocol.TargetGetParams{RemoteID: id, Avatar: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path := res.(protocol.TargetGetResult).Avatar; filepath.Ext(path) != ".jpg" {
+		t.Fatalf("avatar %q is not a .jpg", path)
+	}
+}
+
+func TestGetWithACharacterThatHasNoAvatarReturnsNone(t *testing.T) {
 	f := newFake(t)
 	p := newPlugin(t, f, "owner", fakePassword)
 	id := put(t, p, protocol.TargetPutParams{Card: card(nil), Key: "k"})
 	res, err := p.get(context.Background(), mustJSON(t, protocol.TargetGetParams{RemoteID: id, Avatar: true}))
-	if err != nil || res.(protocol.TargetGetResult).Avatar != "" {
-		t.Fatalf("avatar %q: %v", res.(protocol.TargetGetResult).Avatar, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.(protocol.TargetGetResult).Avatar; got != "" {
+		t.Fatalf("avatar %q, want none", got)
 	}
 }
 
-func TestGetWithoutAvatarAsksForNone(t *testing.T) {
+func TestGetReturnsAnAvatarFailure(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(t, f, "owner", fakePassword)
+	id := put(t, p, protocol.TargetPutParams{Card: card(nil), Key: "k", Avatar: avatarFile(t, "abc")})
+	f.avatarDown = true
+	if _, err := p.get(context.Background(), mustJSON(t, protocol.TargetGetParams{RemoteID: id, Avatar: true})); err == nil {
+		t.Fatal("get succeeded without the avatar")
+	}
+}
+
+func TestGetDoesNotFetchTheAvatarUnlessAsked(t *testing.T) {
 	f := newFake(t)
 	p := newPlugin(t, f, "owner", fakePassword)
 	id := put(t, p, protocol.TargetPutParams{Card: card(nil), Key: "k", Avatar: avatarFile(t, "abc")})

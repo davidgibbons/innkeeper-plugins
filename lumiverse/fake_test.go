@@ -26,6 +26,7 @@ type fake struct {
 	entries    map[string][]map[string]any // by book ID
 	avatars    int
 	avatarGets int
+	avatarDown bool              // the avatar route answers 500
 	images     map[string][]byte // by character ID
 	nextID     int
 }
@@ -217,12 +218,16 @@ func (f *fake) avatar(w http.ResponseWriter, r *http.Request) {
 
 func (f *fake) getAvatar(w http.ResponseWriter, r *http.Request) {
 	f.avatarGets++
+	if f.avatarDown {
+		reply(w, 500, map[string]any{"error": "boom"})
+		return
+	}
 	img, ok := f.images[r.PathValue("id")]
 	if !ok {
 		reply(w, 404, map[string]any{"error": "Not found"})
 		return
 	}
-	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Content-Type", http.DetectContentType(img))
 	_, _ = w.Write(img)
 }
 
