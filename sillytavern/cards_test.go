@@ -267,6 +267,20 @@ func TestGetAvatar(t *testing.T) {
 	}
 }
 
+func TestGetWithoutAnAvatar(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(f)
+	p.blobTmp = t.TempDir()
+	id := put(t, p, protocol.TargetPutParams{Card: testCard(nil), Key: "k"})
+	res, err := p.get(context.Background(), mustJSON(t, protocol.TargetGetParams{RemoteID: id, Avatar: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := res.(protocol.TargetGetResult).Avatar; a != "" {
+		t.Fatalf("avatar = %q", a)
+	}
+}
+
 func TestGetCharacter(t *testing.T) {
 	f := newFake(t)
 	p := newPlugin(f)

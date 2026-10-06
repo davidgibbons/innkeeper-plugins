@@ -344,12 +344,17 @@ func (p *plugin) get(ctx context.Context, params json.RawMessage) (any, error) {
 	return res, nil
 }
 
-// avatar writes character id's image to blob_tmp and returns its path.
+// avatar writes character id's image to blob_tmp and returns its path, or ""
+// when it has none.
 func (p *plugin) avatar(ctx context.Context, id string) (string, error) {
 	// The export is the character's stored PNG, unlike /thumbnail, which shrinks it.
 	var img []byte
 	if err := p.c.call(ctx, "/api/characters/export", map[string]any{"format": "png", "avatar_url": id}, &img); err != nil {
 		return "", err
+	}
+	// The plugin pushes a card without an avatar with the codec's placeholder.
+	if card.IsPlaceholder(img) {
+		return "", nil
 	}
 	path, err := pluginio.WriteTmp(p.blobTmp, "avatar-*.png", img)
 	if err != nil {

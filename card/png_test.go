@@ -2,6 +2,10 @@ package card
 
 import (
 	"bytes"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/png"
 	"testing"
 )
 
@@ -50,5 +54,27 @@ func TestReadChunksRejects(t *testing.T) {
 		if _, err := readChunks(in); err == nil {
 			t.Errorf("%s: no error", name)
 		}
+	}
+}
+
+func TestIsPlaceholder(t *testing.T) {
+	img, err := placeholder()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Apps re-save it as RGBA.
+	rgba := image.NewRGBA(placeholderBounds)
+	draw.Draw(rgba, rgba.Bounds(), image.NewUniform(color.Gray{Y: placeholderGray}), image.Point{}, draw.Src)
+	var resaved bytes.Buffer
+	if err := png.Encode(&resaved, rgba); err != nil {
+		t.Fatal(err)
+	}
+	rgba.Set(10, 10, color.Black)
+	var drawn bytes.Buffer
+	if err := png.Encode(&drawn, rgba); err != nil {
+		t.Fatal(err)
+	}
+	if !IsPlaceholder(img) || !IsPlaceholder(resaved.Bytes()) || IsPlaceholder(drawn.Bytes()) || IsPlaceholder([]byte("x")) {
+		t.Fatal("IsPlaceholder is wrong")
 	}
 }
