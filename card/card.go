@@ -43,7 +43,8 @@ const (
 
 // Decode reads a card file. It returns the card as CCv3 JSON and, for a PNG,
 // the image without its card chunks. A CCv3 card comes back unchanged.
-// Every error wraps ErrNotCard. img is nil for JSON input.
+// Every error wraps ErrNotCard. img is nil for JSON input and for Encode's
+// placeholder, which stands for no avatar.
 func Decode(b []byte) (card json.RawMessage, img []byte, err error) {
 	if !isPNG(b) {
 		card, err = toV3(b)
@@ -75,7 +76,10 @@ func Decode(b []byte) (card json.RawMessage, img []byte, err error) {
 	if card, err = toV3(raw); err != nil {
 		return nil, nil, err
 	}
-	return card, writeChunks(kept), nil
+	if img = writeChunks(kept); IsPlaceholder(img) {
+		img = nil
+	}
+	return card, img, nil
 }
 
 // Encode writes a card in format and returns the file and its extension.

@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,9 +15,18 @@ import (
 
 func TestEncodeDecode(t *testing.T) {
 	tmp := t.TempDir()
+	avatar := filepath.Join(tmp, "avatar.png")
+	f, err := os.Create(avatar)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := png.Encode(f, image.NewGray(image.Rect(0, 0, 2, 3))); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
 	params, _ := json.Marshal(protocol.CodecEncodeParams{
 		Card:   json.RawMessage(`{"spec": "chara_card_v3", "spec_version": "3.0", "data": {"name": "Brakka"}}`),
-		Format: "png",
+		Format: "png", Avatar: avatar,
 	})
 	res, err := encode(tmp, params)
 	if err != nil {

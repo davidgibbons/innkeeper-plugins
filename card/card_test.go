@@ -111,10 +111,12 @@ func TestDecodeV1AndV2(t *testing.T) {
 }
 
 func TestDecodePrefersCCv3(t *testing.T) {
-	img, err := placeholder()
-	if err != nil {
+	// Not the placeholder, which decodes as no avatar.
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewGray(image.Rect(0, 0, 2, 3))); err != nil {
 		t.Fatal(err)
 	}
+	img := buf.Bytes()
 	chunks, _ := readChunks(img)
 	v2 := b64([]byte(`{"spec": "chara_card_v2", "spec_version": "2.0", "data": {"name": "Old"}}`))
 	v3 := b64([]byte(`{"spec": "chara_card_v3", "spec_version": "3.0", "data": {"name": "New"}}`))
@@ -259,4 +261,15 @@ func FuzzDecode(f *testing.F) {
 			Encode(card, format, img)
 		}
 	})
+}
+
+func TestAnAvatarlessCardRoundTripsWithoutAnAvatar(t *testing.T) {
+	in := json.RawMessage(`{"spec":"chara_card_v3","spec_version":"3.0","data":{"name":"Brakka","first_mes":"Hail."}}`)
+	file, _, err := Encode(in, FormatPNG, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, img, err := Decode(file); err != nil || img != nil {
+		t.Fatalf("decode gave a %d-byte avatar, err %v", len(img), err)
+	}
 }
