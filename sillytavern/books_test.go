@@ -92,8 +92,13 @@ func TestCreateWithoutANameIsLorebook(t *testing.T) {
 	f := newFake(t)
 	book := testBook("")
 	delete(book, "name")
-	if id := putBook(t, newPlugin(f), "k", book); id != "Lorebook" {
+	p := newPlugin(f)
+	id := putBook(t, p, "k", book)
+	if id != "Lorebook" {
 		t.Fatalf("created %q", id)
+	}
+	if got := getBook(t, p, id); got["name"] != nil {
+		t.Fatalf("read back the file name as the name: %v", got["name"])
 	}
 }
 
