@@ -26,7 +26,7 @@ func TestLive(t *testing.T) {
 		t.Skip("set LUMIVERSE_LIVE=1 and LUMIVERSE_URL, LUMIVERSE_EMAIL, LUMIVERSE_PASSWORD")
 	}
 	ctx := context.Background()
-	p := &plugin{newClient(os.Getenv("LUMIVERSE_URL"), os.Getenv("LUMIVERSE_EMAIL"), os.Getenv("LUMIVERSE_PASSWORD"))}
+	p := &plugin{newClient(os.Getenv("LUMIVERSE_URL"), os.Getenv("LUMIVERSE_EMAIL"), os.Getenv("LUMIVERSE_PASSWORD")), t.TempDir()}
 	stamp := time.Now().Format("20060102-150405")
 	name := "Innkeeper Live Test " + stamp
 

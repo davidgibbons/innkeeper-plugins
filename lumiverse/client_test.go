@@ -10,7 +10,7 @@ import (
 )
 
 func newPlugin(t *testing.T, f *fake, username, password string) *plugin {
-	return &plugin{newClient(f.srv.URL+"/", username, password)}
+	return &plugin{newClient(f.srv.URL+"/", username, password), t.TempDir()}
 }
 
 func TestSignsInOnceAndAgainWhenTheSessionEnds(t *testing.T) {
@@ -76,4 +76,15 @@ func mustJSON(t *testing.T, v any) json.RawMessage {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+func TestDecodeRaw(t *testing.T) {
+	p := newPlugin(t, newFake(t), "owner", fakePassword)
+	var b []byte
+	if err := p.c.call(context.Background(), "GET", "/raw", nil, &b); err != nil {
+		t.Fatal(err)
+	}
+	if want := "\x89PNG\r\n\x1a\nnot json"; string(b) != want {
+		t.Fatalf("got %q, want %q", b, want)
+	}
 }

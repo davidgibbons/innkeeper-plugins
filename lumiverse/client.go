@@ -120,6 +120,10 @@ func decode(resp *http.Response, what string, out any) error {
 	if out == nil {
 		return nil
 	}
+	if raw, ok := out.(*[]byte); ok {
+		*raw = body
+		return nil
+	}
 	if err := json.Unmarshal(body, out); err != nil {
 		return protocol.NewError(-32000, what+": bad reply: "+err.Error(), false)
 	}

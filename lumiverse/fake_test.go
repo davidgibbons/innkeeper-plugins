@@ -50,6 +50,10 @@ func newFake(t *testing.T) *fake {
 		"POST /world-books/{id}/entries":      f.createEntry,
 		"POST /world-books/{id}/entries/bulk": f.bulkEntries,
 		"GET /world-books/{id}/export":        f.exportBook,
+		"GET /raw": func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "image/png")
+			w.Write([]byte("\x89PNG\r\n\x1a\nnot json"))
+		},
 	}
 	for pattern, h := range api {
 		method, path, _ := strings.Cut(pattern, " ")
