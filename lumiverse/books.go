@@ -98,7 +98,7 @@ func (p *plugin) putLorebook(ctx context.Context, params json.RawMessage) (any, 
 	return protocol.TargetPutResult{RemoteID: id}, nil
 }
 
-// bookInfo is the name and description Lumiverse stores for a book's.
+// bookInfo is the name and description Lumiverse stores for book.
 func bookInfo(book map[string]any) map[string]any {
 	name, _ := book["name"].(string)
 	description, _ := book["description"].(string)
@@ -312,7 +312,7 @@ func (p *plugin) getLorebook(ctx context.Context, params json.RawMessage) (any, 
 		book[k] = v
 	}
 	// A name or description Lumiverse still holds as pushed reads back as
-	// pushed, so a book without them has none.
+	// pushed, including absent.
 	if pushed, ok := cur.Metadata["pushed"].(map[string]any); ok {
 		for k, sent := range bookInfo(pushed) {
 			if book[k] != sent {

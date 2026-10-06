@@ -346,10 +346,11 @@ func (p *plugin) getLorebook(ctx context.Context, params json.RawMessage) (any, 
 	if err := p.c.call(ctx, "/api/worldinfo/get", map[string]any{"name": in.RemoteID}, &data); err != nil {
 		return nil, err
 	}
-	stash, pushed := object(data["extensions"])[innkeeperKey].(map[string]any)
+	stash, fromInnkeeper := object(data["extensions"])[innkeeperKey].(map[string]any)
 	book := map[string]any{}
-	// A pushed book without a name has none; any other is named by its file.
-	if name, _ := data["name"].(string); name != "" || !pushed {
+	// A book pushed without a name reads back without one while the file has
+	// none; a book made in SillyTavern is named by its file.
+	if name, _ := data["name"].(string); name != "" || !fromInnkeeper {
 		book["name"] = cmp.Or(name, in.RemoteID)
 	}
 	for _, k := range bookFields {

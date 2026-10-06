@@ -42,14 +42,19 @@ or secrets.
 ## What it syncs
 
 - Card fields SillyTavern keeps.
-- The avatar, uploaded only when it changes.
+- The avatar, uploaded only when it changes. SillyTavern needs an image, so
+  a card without one gets a plain gray placeholder, which reads back as no
+  avatar until you set an image in SillyTavern.
 - Lorebooks as world info files, linked by the character's world setting.
   A character has one lorebook; a card with two fails its push.
   A push links the character to its pushed lorebook, or clears the link when
   the card has none, so a world set in SillyTavern is replaced.
   Character filters on world info entries don't sync.
   Entry fields SillyTavern has no place for, such as RisuAI's `mode`, are
-  kept in the plugin's keys and read back as pushed.
+  kept in the entry's `extensions.innkeeper` and read back as pushed. A field
+  SillyTavern fills in with a default, such as an empty `secondary_keys`,
+  reads back as pushed until a save in SillyTavern changes it; its browser
+  save adds defaults to every entry.
 - Importing from SillyTavern takes each character's image and its world
   link, so imported cards keep both.
 
