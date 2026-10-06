@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -276,20 +278,48 @@ func toWorldEntry(e map[string]any, index int) map[string]any {
 			stash[k] = v
 		}
 	}
-	pushed := map[string]any{}
+	orig := map[string]any{}
 	for k, v := range e {
-		pushed[k] = v
+		orig[k] = v
 	}
 	if _, ok := e["extensions"]; ok {
-		pushedExt := map[string]any{}
+		origExt := map[string]any{}
 		for k, v := range ext {
-			pushedExt[k] = v
+			origExt[k] = v
 		}
-		pushed["extensions"] = pushedExt
+		orig["extensions"] = origExt
 	}
-	stash["entry"] = pushed
 	ext[innkeeperKey] = stash
 	out["extensions"] = ext
+	stash["fields"] = readBackDiffs(orig, out)
+	return out
+}
+
+// readBackDiffs lists the fields of orig that fromWorldEntry(st) reads back
+// differently, each with a hash of how it reads back and the pushed value, or
+// no value if orig lacks it. content is left out: SillyTavern stores it as
+// pushed, and a copy would go stale after an edit there.
+func readBackDiffs(orig, st map[string]any) map[string]any {
+	// Through JSON, so numbers compare as a stored file's do.
+	var stored map[string]any
+	raw, _ := json.Marshal(st)
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		return nil
+	}
+	sent := fromWorldEntry(stored)
+	out := map[string]any{}
+	for _, m := range []map[string]any{sent, orig} {
+		for k := range m {
+			if k == "content" || jsonHash(sent[k]) == jsonHash(orig[k]) {
+				continue
+			}
+			rec := map[string]any{"sent": jsonHash(sent[k])}
+			if v, ok := orig[k]; ok {
+				rec["value"] = v
+			}
+			out[k] = rec
+		}
+	}
 	return out
 }
 
@@ -429,33 +459,18 @@ func fromWorldEntry(st map[string]any) map[string]any {
 	return e
 }
 
-// asPushed is fromWorldEntry(st) with each field SillyTavern hasn't changed
-// since the push given back as pushed, so a field it can't hold or fills in
-// with a default reads back unchanged.
+// asPushed is fromWorldEntry(st) with each field readBackDiffs recorded given
+// back as pushed while it still reads back as it did after the push, so a
+// field SillyTavern can't hold, or fills in with a default, reads back
+// unchanged.
 func asPushed(st map[string]any) map[string]any {
 	e := fromWorldEntry(st)
-	orig, ok := object(object(st["extensions"])[innkeeperKey])["entry"].(map[string]any)
-	if !ok {
-		return e
-	}
-	// Through JSON, so numbers compare as SillyTavern's do.
-	var stored map[string]any
-	raw, _ := json.Marshal(toWorldEntry(orig, int(number(st["uid"]))))
-	if err := json.Unmarshal(raw, &stored); err != nil {
-		return e
-	}
-	sent := fromWorldEntry(stored)
-	keys := map[string]bool{}
-	for _, m := range []map[string]any{e, sent, orig} {
-		for k := range m {
-			keys[k] = true
-		}
-	}
-	for k := range keys {
-		if !sameJSON(e[k], sent[k]) {
+	for k, r := range object(object(object(st["extensions"])[innkeeperKey])["fields"]) {
+		rec := object(r)
+		if jsonHash(e[k]) != rec["sent"] {
 			continue
 		}
-		if v, ok := orig[k]; ok {
+		if v, ok := rec["value"]; ok {
 			e[k] = v
 		} else {
 			delete(e, k)
@@ -464,10 +479,11 @@ func asPushed(st map[string]any) map[string]any {
 	return e
 }
 
-func sameJSON(a, b any) bool {
-	ra, errA := json.Marshal(a)
-	rb, errB := json.Marshal(b)
-	return errA == nil && errB == nil && bytes.Equal(ra, rb)
+// jsonHash is a short hash of v's JSON, enough to tell whether a field changed.
+func jsonHash(v any) string {
+	raw, _ := json.Marshal(v)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:8])
 }
 
 func (p *plugin) listLorebooks(ctx context.Context) (protocol.TargetListResult, error) {

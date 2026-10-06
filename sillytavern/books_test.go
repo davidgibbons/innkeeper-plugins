@@ -177,6 +177,9 @@ func TestAnEntryReadsBackAsPushed(t *testing.T) {
 	if got := getBook(t, p, id); !reflect.DeepEqual(got, normal(t, book)) {
 		t.Fatalf("read back\n%s\nwant\n%s", mustJSON(t, got), mustJSON(t, book))
 	}
+	if stash := mustJSON(t, object(object(object(f.worlds[id]["entries"])["0"])["extensions"])[innkeeperKey]); strings.Contains(string(stash), "content") || strings.Contains(string(stash), "It rings.") {
+		t.Fatalf("the stash holds the content: %s", stash)
+	}
 	// A field changed in SillyTavern reads back as SillyTavern has it.
 	object(object(f.worlds[id]["entries"])["0"])["content"] = "It sings."
 	got := object(getBook(t, p, id)["entries"].([]any)[0])
