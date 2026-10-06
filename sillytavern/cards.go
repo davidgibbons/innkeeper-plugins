@@ -155,7 +155,22 @@ func (p *plugin) createCharacter(ctx context.Context, data map[string]any, world
 	if reply.Error || reply.FileName == "" {
 		return "", protocol.NewError(-32000, "SillyTavern couldn't import the card; its server log says why", false)
 	}
-	return reply.FileName + ".png", nil
+	id := reply.FileName + ".png"
+	// The import strips the characters a file name can't hold from the
+	// card's name too, so put the name back.
+	if name, ok := data["name"].(string); ok {
+		cur, err := p.read(ctx, id)
+		if err != nil {
+			return "", err
+		}
+		if object(cur["data"])["name"] != name {
+			body := map[string]any{"avatar": id, "name": name, "data": map[string]any{"name": name}}
+			if err := p.c.call(ctx, "/api/characters/merge-attributes", body, nil); err != nil {
+				return "", err
+			}
+		}
+	}
+	return id, nil
 }
 
 // updateCharacter makes character id match data, keeping SillyTavern's

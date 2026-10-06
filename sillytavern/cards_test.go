@@ -117,6 +117,15 @@ func TestAFailedImportFails(t *testing.T) {
 	}
 }
 
+func TestCreateKeepsANameSillyTavernCleans(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(f)
+	id := put(t, p, protocol.TargetPutParams{Card: testCard(map[string]any{"name": "UKCAT/UCAT"}), Key: "k"})
+	if c, data, _ := stored(f, id); id != "UKCATUCAT.png" || data["name"] != "UKCAT/UCAT" || c["name"] != "UKCAT/UCAT" {
+		t.Fatalf("%q: name %v, data.name %v", id, c["name"], data["name"])
+	}
+}
+
 // A re-run after a crash finds the character its key made, and brings it up to date.
 func TestPutWithAKnownKeyReusesTheCharacter(t *testing.T) {
 	for _, lazy := range []bool{false, true} {

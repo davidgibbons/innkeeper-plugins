@@ -359,13 +359,15 @@ func (f *fake) charactersImport(w http.ResponseWriter, r *http.Request) {
 	}
 	var c map[string]any
 	_ = json.Unmarshal(raw, &c)
-	readFromV2(c)
+	// Import cleans the card's name with sanitize-filename, as well as the file's.
 	name := strings.Map(func(r rune) rune {
 		if strings.ContainsRune(`\/:*?"<>|`, r) {
 			return -1
 		}
 		return r
 	}, fmt.Sprint(object(c["data"])["name"]))
+	object(c["data"])["name"] = name
+	readFromV2(c)
 	if name == "" {
 		name = "character"
 	}
