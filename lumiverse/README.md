@@ -23,9 +23,12 @@ Innkeeper server out of all of Lumiverse for 15 minutes or more.
 - Card fields Lumiverse keeps, including `extensions` such as the depth
   prompt. Lumiverse's own settings, such as the voice, favorites, and
   expressions, stay as they are in Lumiverse and don't show as changes.
-- The avatar, uploaded only when it changes.
+  SillyTavern's `fav` and `world` keys, which a SillyTavern import leaves
+  behind, are dropped when reading.
+- The avatar, uploaded only when it changes, and read back when asked.
 - Lorebooks as world books, linked to their characters. Pushing a lorebook
-  replaces its world book's entries and keeps its ID.
+  replaces its world book's entries and keeps its ID. Reading a character
+  returns the world books it links to.
 
 Lumiverse stores CCv3 fields it has no place for in the plugin's own keys:
 `extensions.innkeeper` on characters and entries, and `metadata` on world

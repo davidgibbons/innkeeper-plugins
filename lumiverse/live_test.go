@@ -68,6 +68,19 @@ func TestLive(t *testing.T) {
 		t.Errorf("world_book_ids = %v", c.Extensions["world_book_ids"])
 	}
 
+	// Reading it back returns the avatar and the links.
+	res, err := p.get(ctx, mustJSON(t, protocol.TargetGetParams{RemoteID: id, Avatar: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := res.(protocol.TargetGetResult)
+	if !slices.Equal(read.LorebookRemoteIDs, []string{bookID}) {
+		t.Errorf("get returned links %v, want [%s]", read.LorebookRemoteIDs, bookID)
+	}
+	if st, err := os.Stat(read.Avatar); err != nil || st.Size() == 0 || filepath.Dir(read.Avatar) != p.blobTmp {
+		t.Errorf("get returned avatar %q (%v), want a non-empty file under %s", read.Avatar, err, p.blobTmp)
+	}
+
 	// Both lists hold what the test made, and a listed character reads back.
 	chars, err := p.list(ctx, "/characters/summary?sort=name&direction=asc")
 	if err != nil {
