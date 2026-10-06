@@ -279,6 +279,16 @@ func TestGetWithoutAnAvatar(t *testing.T) {
 	if a := res.(protocol.TargetGetResult).Avatar; a != "" {
 		t.Fatalf("avatar = %q", a)
 	}
+	// A character SillyTavern made itself keeps a gray image.
+	_, _, ext := stored(f, id)
+	delete(ext, innkeeperKey)
+	res, err = p.get(context.Background(), mustJSON(t, protocol.TargetGetParams{RemoteID: id, Avatar: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.(protocol.TargetGetResult).Avatar == "" {
+		t.Fatal("a native character's gray avatar was dropped")
+	}
 }
 
 func TestGetCharacter(t *testing.T) {
