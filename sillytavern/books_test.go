@@ -92,8 +92,13 @@ func TestCreateWithoutANameIsLorebook(t *testing.T) {
 	f := newFake(t)
 	book := testBook("")
 	delete(book, "name")
-	if id := putBook(t, newPlugin(f), "k", book); id != "Lorebook" {
+	p := newPlugin(f)
+	id := putBook(t, p, "k", book)
+	if id != "Lorebook" {
 		t.Fatalf("created %q", id)
+	}
+	if got := getBook(t, p, id); got["name"] != nil {
+		t.Fatalf("read back the file name as the name: %v", got["name"])
 	}
 }
 
@@ -159,6 +164,39 @@ func TestWorldFileRoundTrips(t *testing.T) {
 	}
 	if got := getBook(t, p, id); !reflect.DeepEqual(got, normal(t, book)) {
 		t.Fatalf("read back\n%v\nwant\n%v", mustJSON(t, got), mustJSON(t, book))
+	}
+}
+
+func TestAnEntryReadsBackAsPushed(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(f)
+	// No secondary_keys, comment, or extensions, and a field SillyTavern has no place for.
+	e := map[string]any{"keys": []any{"anvil"}, "content": "It rings.", "name": "anvil", "mode": "normal"}
+	book := map[string]any{"entries": []any{e}}
+	id := putBook(t, p, "k", book)
+	if got := getBook(t, p, id); !reflect.DeepEqual(got, normal(t, book)) {
+		t.Fatalf("read back\n%s\nwant\n%s", mustJSON(t, got), mustJSON(t, book))
+	}
+	if stash := mustJSON(t, object(object(object(f.worlds[id]["entries"])["0"])["extensions"])[innkeeperKey]); strings.Contains(string(stash), "content") || strings.Contains(string(stash), "It rings.") {
+		t.Fatalf("the stash holds the content: %s", stash)
+	}
+	// Fields changed in SillyTavern read back as SillyTavern has them,
+	// stashed ones included.
+	st := object(object(f.worlds[id]["entries"])["0"])
+	st["content"], st["comment"], st["keysecondary"] = "It sings.", "Hammer note", []any{"x"}
+	got := object(getBook(t, p, id)["entries"].([]any)[0])
+	if got["content"] != "It sings." || got["comment"] != "Hammer note" || !reflect.DeepEqual(got["secondary_keys"], []any{"x"}) ||
+		got["mode"] != "normal" {
+		t.Fatalf("after edits: entry %v", got)
+	}
+	// The same after a browser save, which adds defaults first.
+	id = putBook(t, p, "k", book)
+	st = object(object(f.worlds[id]["entries"])["0"])
+	addMissingWorldInfoFields(st)
+	st["disable"], st["keysecondary"] = true, []any{"y"}
+	got = object(getBook(t, p, id)["entries"].([]any)[0])
+	if got["enabled"] != false || !reflect.DeepEqual(got["secondary_keys"], []any{"y"}) || got["mode"] != "normal" {
+		t.Fatalf("after a browser save: entry %v", got)
 	}
 }
 

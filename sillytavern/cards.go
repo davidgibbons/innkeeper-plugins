@@ -155,7 +155,22 @@ func (p *plugin) createCharacter(ctx context.Context, data map[string]any, world
 	if reply.Error || reply.FileName == "" {
 		return "", protocol.NewError(-32000, "SillyTavern couldn't import the card; its server log says why", false)
 	}
-	return reply.FileName + ".png", nil
+	id := reply.FileName + ".png"
+	// The import strips the characters a file name can't hold from the
+	// card's name too, so put the name back.
+	if name, ok := data["name"].(string); ok {
+		cur, err := p.read(ctx, id)
+		if err != nil {
+			return "", err
+		}
+		if object(cur["data"])["name"] != name {
+			body := map[string]any{"avatar": id, "name": name, "data": map[string]any{"name": name}}
+			if err := p.c.call(ctx, "/api/characters/merge-attributes", body, nil); err != nil {
+				return "", err
+			}
+		}
+	}
+	return id, nil
 }
 
 // updateCharacter makes character id match data, keeping SillyTavern's
@@ -312,6 +327,8 @@ func (p *plugin) get(ctx context.Context, params json.RawMessage) (any, error) {
 	if world, _ := ext["world"].(string); world != "" {
 		links = append(links, world)
 	}
+	stash, pushed := ext[innkeeperKey].(map[string]any)
+	_, hasAvatar := stash["avatar"]
 	for _, k := range []string{innkeeperKey, "world", "fav"} {
 		delete(ext, k)
 	}
@@ -322,19 +339,24 @@ func (p *plugin) get(ctx context.Context, params json.RawMessage) (any, error) {
 	}
 	res := protocol.TargetGetResult{Card: raw, LorebookRemoteIDs: links}
 	if in.Avatar {
-		if res.Avatar, err = p.avatar(ctx, in.RemoteID); err != nil {
+		if res.Avatar, err = p.avatar(ctx, in.RemoteID, pushed && !hasAvatar); err != nil {
 			return nil, err
 		}
 	}
 	return res, nil
 }
 
-// avatar writes character id's image to blob_tmp and returns its path.
-func (p *plugin) avatar(ctx context.Context, id string) (string, error) {
+// avatar writes character id's image to blob_tmp and returns its path. With
+// pushedBare, for a character pushed without an avatar, it returns "" while
+// the image is still the codec's placeholder.
+func (p *plugin) avatar(ctx context.Context, id string, pushedBare bool) (string, error) {
 	// The export is the character's stored PNG, unlike /thumbnail, which shrinks it.
 	var img []byte
 	if err := p.c.call(ctx, "/api/characters/export", map[string]any{"format": "png", "avatar_url": id}, &img); err != nil {
 		return "", err
+	}
+	if pushedBare && card.IsPlaceholder(img) {
+		return "", nil
 	}
 	path, err := pluginio.WriteTmp(p.blobTmp, "avatar-*.png", img)
 	if err != nil {

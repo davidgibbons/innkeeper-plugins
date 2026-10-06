@@ -51,11 +51,15 @@ func (p *plugin) putLorebook(ctx context.Context, params json.RawMessage) (any, 
 			ccv3[f] = v
 		}
 	}
-	name, _ := book["name"].(string)
-	description, _ := book["description"].(string)
-	info := map[string]any{"name": cmp.Or(name, "Lorebook"), "description": description}
+	pushed := map[string]any{}
+	for _, k := range []string{"name", "description"} {
+		if v, ok := book[k]; ok {
+			pushed[k] = v
+		}
+	}
+	info := bookInfo(pushed)
 	if id == "" {
-		info["metadata"] = map[string]any{"source": "innkeeper", "sync_key": key, "ccv3": ccv3}
+		info["metadata"] = map[string]any{"source": "innkeeper", "sync_key": key, "ccv3": ccv3, "pushed": pushed}
 		var created worldBook
 		if err := p.c.call(ctx, "POST", "/world-books", info, &created); err != nil {
 			return nil, err
@@ -71,7 +75,7 @@ func (p *plugin) putLorebook(ctx context.Context, params json.RawMessage) (any, 
 		if meta == nil {
 			meta = map[string]any{}
 		}
-		meta["source"], meta["ccv3"] = "innkeeper", ccv3
+		meta["source"], meta["ccv3"], meta["pushed"] = "innkeeper", ccv3, pushed
 		if key != "" {
 			meta["sync_key"] = key
 		}
@@ -92,6 +96,13 @@ func (p *plugin) putLorebook(ctx context.Context, params json.RawMessage) (any, 
 		}
 	}
 	return protocol.TargetPutResult{RemoteID: id}, nil
+}
+
+// bookInfo is the name and description Lumiverse stores for book.
+func bookInfo(book map[string]any) map[string]any {
+	name, _ := book["name"].(string)
+	description, _ := book["description"].(string)
+	return map[string]any{"name": cmp.Or(name, "Lorebook"), "description": description}
 }
 
 // findBook returns the world book a put with key created, if any.
@@ -299,6 +310,20 @@ func (p *plugin) getLorebook(ctx context.Context, params json.RawMessage) (any, 
 	}
 	for k, v := range object(cur.Metadata["ccv3"]) {
 		book[k] = v
+	}
+	// A name or description Lumiverse still holds as pushed reads back as
+	// pushed, including absent.
+	if pushed, ok := cur.Metadata["pushed"].(map[string]any); ok {
+		for k, sent := range bookInfo(pushed) {
+			if book[k] != sent {
+				continue
+			}
+			if v, ok := pushed[k]; ok {
+				book[k] = v
+			} else {
+				delete(book, k)
+			}
+		}
 	}
 	entries, _ := book["entries"].([]any)
 	// Lumiverse orders entries by insertion order; restore the book's order.

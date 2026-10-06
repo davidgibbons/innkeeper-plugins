@@ -2,6 +2,10 @@ package card
 
 import (
 	"bytes"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/png"
 	"testing"
 )
 
@@ -49,6 +53,40 @@ func TestReadChunksRejects(t *testing.T) {
 	} {
 		if _, err := readChunks(in); err == nil {
 			t.Errorf("%s: no error", name)
+		}
+	}
+}
+
+func TestIsPlaceholder(t *testing.T) {
+	img, err := placeholder()
+	if err != nil {
+		t.Fatal(err)
+	}
+	gray := func(r image.Rectangle, mark bool) []byte {
+		m := image.NewRGBA(r)
+		draw.Draw(m, r, image.NewUniform(color.Gray{Y: placeholderGray}), image.Point{}, draw.Src)
+		if mark {
+			m.Set(10, 10, color.Black)
+		}
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, m); err != nil {
+			t.Fatal(err)
+		}
+		return buf.Bytes()
+	}
+	for _, c := range []struct {
+		name string
+		img  []byte
+		want bool
+	}{
+		{"the placeholder", img, true},
+		{"the placeholder re-saved as RGBA, as apps do", gray(placeholderBounds, false), true},
+		{"the placeholder with one pixel drawn on", gray(placeholderBounds, true), false},
+		{"the same gray at 800x1200", gray(image.Rect(0, 0, 800, 1200), false), false},
+		{"not an image", []byte("x"), false},
+	} {
+		if got := IsPlaceholder(c.img); got != c.want {
+			t.Errorf("IsPlaceholder(%s) = %v, want %v", c.name, got, c.want)
 		}
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -276,8 +278,49 @@ func toWorldEntry(e map[string]any, index int) map[string]any {
 			stash[k] = v
 		}
 	}
+	orig := map[string]any{}
+	for k, v := range e {
+		orig[k] = v
+	}
+	if _, ok := e["extensions"]; ok {
+		origExt := map[string]any{}
+		for k, v := range ext {
+			origExt[k] = v
+		}
+		orig["extensions"] = origExt
+	}
 	ext[innkeeperKey] = stash
 	out["extensions"] = ext
+	stash["fields"] = readBackDiffs(orig, out)
+	return out
+}
+
+// readBackDiffs lists the fields of orig that fromWorldEntry(st) reads back
+// differently, each with a hash of how it reads back and the pushed value, or
+// no value if orig lacks it. content is left out so it is never copied:
+// SillyTavern holds any string as pushed, so this only skips a missing or
+// non-string content, which reads back as "".
+func readBackDiffs(orig, st map[string]any) map[string]any {
+	// Through JSON, so numbers compare as a stored file's do.
+	var stored map[string]any
+	raw, _ := json.Marshal(st)
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		return nil
+	}
+	sent := fromWorldEntry(stored)
+	out := map[string]any{}
+	for _, m := range []map[string]any{sent, orig} {
+		for k := range m {
+			if k == "content" || jsonHash(sent[k]) == jsonHash(orig[k]) {
+				continue
+			}
+			rec := map[string]any{"sent": jsonHash(sent[k])}
+			if v, ok := orig[k]; ok {
+				rec["value"] = v
+			}
+			out[k] = rec
+		}
+	}
 	return out
 }
 
@@ -304,9 +347,13 @@ func (p *plugin) getLorebook(ctx context.Context, params json.RawMessage) (any, 
 	if err := p.c.call(ctx, "/api/worldinfo/get", map[string]any{"name": in.RemoteID}, &data); err != nil {
 		return nil, err
 	}
-	name, _ := data["name"].(string)
-	book := map[string]any{"name": cmp.Or(name, in.RemoteID)}
-	stash := object(object(data["extensions"])[innkeeperKey])
+	stash, fromInnkeeper := object(data["extensions"])[innkeeperKey].(map[string]any)
+	book := map[string]any{}
+	// A book pushed without a name reads back without one while the file has
+	// none; a book made in SillyTavern is named by its file.
+	if name, _ := data["name"].(string); name != "" || !fromInnkeeper {
+		book["name"] = cmp.Or(name, in.RemoteID)
+	}
 	for _, k := range bookFields {
 		if v, ok := stash[k]; ok {
 			book[k] = v
@@ -328,7 +375,7 @@ func (p *plugin) getLorebook(ctx context.Context, params json.RawMessage) (any, 
 	})
 	entries := make([]any, len(stored))
 	for i, it := range stored {
-		entries[i] = fromWorldEntry(it.e)
+		entries[i] = asPushed(it.e)
 	}
 	book["entries"] = entries
 	raw, err := json.Marshal(book)
@@ -412,6 +459,33 @@ func fromWorldEntry(st map[string]any) map[string]any {
 		}
 	}
 	return e
+}
+
+// asPushed is fromWorldEntry(st) with each field readBackDiffs recorded given
+// back as pushed while it still reads back as it did after the push, so a
+// field SillyTavern can't hold, or fills in with a default, reads back
+// unchanged.
+func asPushed(st map[string]any) map[string]any {
+	e := fromWorldEntry(st)
+	for k, r := range object(object(object(st["extensions"])[innkeeperKey])["fields"]) {
+		rec := object(r)
+		if jsonHash(e[k]) != rec["sent"] {
+			continue
+		}
+		if v, ok := rec["value"]; ok {
+			e[k] = v
+		} else {
+			delete(e, k)
+		}
+	}
+	return e
+}
+
+// jsonHash is a short hash of v's JSON, enough to tell whether a field changed.
+func jsonHash(v any) string {
+	raw, _ := json.Marshal(v)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:8])
 }
 
 func (p *plugin) listLorebooks(ctx context.Context) (protocol.TargetListResult, error) {

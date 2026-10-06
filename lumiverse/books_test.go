@@ -72,6 +72,23 @@ func TestCreateAndReadWorldBook(t *testing.T) {
 	}
 }
 
+func TestABookWithoutANameReadsBackWithout(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(t, f, "owner", fakePassword)
+	id := putBook(t, p, protocol.TargetPutLorebookParams{Key: "k", Lorebook: mustJSON(t, map[string]any{"entries": []any{}})})
+	if f.books[id]["name"] != "Lorebook" {
+		t.Fatalf("stored name %v", f.books[id]["name"])
+	}
+	if book := getBook(t, p, id); book["name"] != nil || book["description"] != nil {
+		t.Fatalf("read back %v", book)
+	}
+	// A name given in Lumiverse reads back.
+	f.books[id]["name"] = "Forge lore"
+	if book := getBook(t, p, id); book["name"] != "Forge lore" {
+		t.Fatalf("read back %v", book)
+	}
+}
+
 func TestReplaceWorldBookKeepsItsID(t *testing.T) {
 	f := newFake(t)
 	p := newPlugin(t, f, "owner", fakePassword)

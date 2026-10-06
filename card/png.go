@@ -71,14 +71,40 @@ func textChunk(keyword string, text []byte) chunk {
 	return chunk{typ: "tEXt", data: append(append([]byte(keyword), 0), text...)}
 }
 
+const placeholderGray = 0x80
+
+var placeholderBounds = image.Rect(0, 0, 400, 600)
+
 // placeholder is the image for a PNG card without an avatar: plain gray, in
 // the 2:3 shape card apps show.
 func placeholder() ([]byte, error) {
-	img := image.NewGray(image.Rect(0, 0, 400, 600))
+	img := image.NewGray(placeholderBounds)
 	for i := range img.Pix {
-		img.Pix[i] = 0x80
+		img.Pix[i] = placeholderGray
 	}
 	var buf bytes.Buffer
 	err := png.Encode(&buf, img)
 	return buf.Bytes(), err
+}
+
+// IsPlaceholder reports whether img is the placeholder Encode gives a card
+// without an avatar, in any encoding an app re-saved it in.
+func IsPlaceholder(img []byte) bool {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(img))
+	if err != nil || image.Rect(0, 0, cfg.Width, cfg.Height) != placeholderBounds {
+		return false
+	}
+	m, _, err := image.Decode(bytes.NewReader(img))
+	if err != nil {
+		return false
+	}
+	const want = placeholderGray * 0x101
+	for y := range placeholderBounds.Dy() {
+		for x := range placeholderBounds.Dx() {
+			if r, g, b, a := m.At(x, y).RGBA(); r != want || g != want || b != want || a != 0xffff {
+				return false
+			}
+		}
+	}
+	return true
 }

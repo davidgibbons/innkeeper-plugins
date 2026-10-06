@@ -117,6 +117,15 @@ func TestAFailedImportFails(t *testing.T) {
 	}
 }
 
+func TestCreateKeepsANameSillyTavernCleans(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(f)
+	id := put(t, p, protocol.TargetPutParams{Card: testCard(map[string]any{"name": "UKCAT/UCAT"}), Key: "k"})
+	if c, data, _ := stored(f, id); id != "UKCATUCAT.png" || data["name"] != "UKCAT/UCAT" || c["name"] != "UKCAT/UCAT" {
+		t.Fatalf("%q: name %v, data.name %v", id, c["name"], data["name"])
+	}
+}
+
 // A re-run after a crash finds the character its key made, and brings it up to date.
 func TestPutWithAKnownKeyReusesTheCharacter(t *testing.T) {
 	for _, lazy := range []bool{false, true} {
@@ -255,6 +264,30 @@ func TestGetAvatar(t *testing.T) {
 	img, err := os.ReadFile(path)
 	if filepath.Dir(path) != p.blobTmp || err != nil || !bytes.Equal(img, f.images[id]) {
 		t.Fatalf("avatar %q: %v", path, err)
+	}
+}
+
+func TestGetWithoutAnAvatar(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(f)
+	p.blobTmp = t.TempDir()
+	id := put(t, p, protocol.TargetPutParams{Card: testCard(nil), Key: "k"})
+	res, err := p.get(context.Background(), mustJSON(t, protocol.TargetGetParams{RemoteID: id, Avatar: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := res.(protocol.TargetGetResult).Avatar; a != "" {
+		t.Fatalf("avatar = %q", a)
+	}
+	// A character SillyTavern made itself keeps a gray image.
+	_, _, ext := stored(f, id)
+	delete(ext, innkeeperKey)
+	res, err = p.get(context.Background(), mustJSON(t, protocol.TargetGetParams{RemoteID: id, Avatar: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.(protocol.TargetGetResult).Avatar == "" {
+		t.Fatal("a native character's gray avatar was dropped")
 	}
 }
 
