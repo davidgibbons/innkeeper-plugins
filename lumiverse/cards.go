@@ -46,6 +46,21 @@ func (c character) stash() map[string]any {
 	return m
 }
 
+// worldBookIDs is never nil, so an empty result means the character has none.
+func (c character) worldBookIDs() []string {
+	links := []string{}
+	if ids, ok := c.Extensions["world_book_ids"].([]any); ok {
+		for _, id := range ids {
+			if s, ok := id.(string); ok && s != "" {
+				links = append(links, s)
+			}
+		}
+	} else if id, _ := c.Extensions["world_book_id"].(string); id != "" {
+		links = append(links, id)
+	}
+	return links
+}
+
 func object(v any) map[string]any {
 	m, _ := v.(map[string]any)
 	if m == nil {
@@ -265,17 +280,6 @@ func (p *plugin) get(ctx context.Context, params json.RawMessage) (any, error) {
 	if err := p.c.call(ctx, "GET", "/characters/"+url.PathEscape(in.RemoteID), nil, &c); err != nil {
 		return nil, err
 	}
-	src := c.Extensions
-	links := []string{}
-	if ids, ok := src["world_book_ids"].([]any); ok {
-		for _, id := range ids {
-			if s, ok := id.(string); ok && s != "" {
-				links = append(links, s)
-			}
-		}
-	} else if id, _ := src["world_book_id"].(string); id != "" {
-		links = append(links, id)
-	}
 	var card map[string]any
 	if err := p.c.call(ctx, "GET", "/characters/"+url.PathEscape(in.RemoteID)+"/export?format=json", nil, &card); err != nil {
 		return nil, err
@@ -285,10 +289,10 @@ func (p *plugin) get(ctx context.Context, params json.RawMessage) (any, error) {
 	delete(data, "character_book")
 	ext := map[string]any{}
 	for k, v := range object(data["extensions"]) {
+		// fav and world are SillyTavern's own keys, carried in by an import.
 		switch {
 		case k == "character_version":
 			data[k] = v
-		// SillyTavern's own keys, carried in by a SillyTavern import.
 		case isLocal(k) || k == innkeeperKey || k == "character_book" || k == "fav" || k == "world":
 		default:
 			ext[k] = v
@@ -300,7 +304,7 @@ func (p *plugin) get(ctx context.Context, params json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	res := protocol.TargetGetResult{Card: raw, LorebookRemoteIDs: links}
+	res := protocol.TargetGetResult{Card: raw, LorebookRemoteIDs: c.worldBookIDs()}
 	if in.Avatar {
 		if res.Avatar, err = p.avatar(ctx, in.RemoteID); err != nil {
 			return nil, err

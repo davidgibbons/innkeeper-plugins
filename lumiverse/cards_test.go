@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/davidgibbons/innkeeper/protocol"
@@ -139,16 +140,25 @@ func TestGetReturnsTheWorldBookLinks(t *testing.T) {
 		return res.(protocol.TargetGetResult).LorebookRemoteIDs
 	}
 	id := put(t, p, protocol.TargetPutParams{Card: card(nil), Key: "k", LorebookRemoteIDs: []string{"wb1", "wb2"}})
-	if got := links(id); fmt.Sprint(got) != "[wb1 wb2]" {
-		t.Fatalf("links = %v", got)
-	}
 	f.characters["old"] = map[string]any{"id": "old", "name": "Old", "extensions": map[string]any{"world_book_id": "wb3"}}
-	if got := links("old"); fmt.Sprint(got) != "[wb3]" {
-		t.Fatalf("legacy links = %v", got)
-	}
 	f.characters["bare"] = map[string]any{"id": "bare", "name": "Bare"}
-	if got := links("bare"); got == nil || len(got) != 0 {
-		t.Fatalf("no links = %#v", got)
+	f.characters["messy"] = map[string]any{"id": "messy", "name": "Messy",
+		"extensions": map[string]any{"world_book_ids": []any{7.0, "", "wb4"}}}
+	for name, c := range map[string]struct {
+		id   string
+		want []string
+	}{
+		"list":   {id, []string{"wb1", "wb2"}},
+		"legacy": {"old", []string{"wb3"}},
+		"none":   {"bare", []string{}},
+		"junk":   {"messy", []string{"wb4"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := links(c.id)
+			if got == nil || !slices.Equal(got, c.want) {
+				t.Fatalf("links = %#v, want %#v", got, c.want)
+			}
+		})
 	}
 }
 
@@ -165,8 +175,10 @@ func TestGetDropsSillyTavernsKeys(t *testing.T) {
 	var got struct {
 		Data map[string]any `json:"data"`
 	}
-	_ = json.Unmarshal(res.(protocol.TargetGetResult).Card, &got)
-	if e := object(got.Data["extensions"]); e["fav"] != nil || e["world"] != nil {
+	if err := json.Unmarshal(res.(protocol.TargetGetResult).Card, &got); err != nil {
+		t.Fatal(err)
+	}
+	if e := object(got.Data["extensions"]); e["fav"] != nil || e["world"] != nil || e["depth_prompt"] == nil {
 		t.Fatalf("extensions = %v", e)
 	}
 }
