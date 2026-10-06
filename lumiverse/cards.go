@@ -260,6 +260,22 @@ func (p *plugin) get(ctx context.Context, params json.RawMessage) (any, error) {
 	if err := json.Unmarshal(params, &in); err != nil {
 		return nil, invalid(err)
 	}
+	// The export leaves world_book_ids out, so read the links here.
+	var c character
+	if err := p.c.call(ctx, "GET", "/characters/"+url.PathEscape(in.RemoteID), nil, &c); err != nil {
+		return nil, err
+	}
+	src := c.Extensions
+	links := []string{}
+	if ids, ok := src["world_book_ids"].([]any); ok {
+		for _, id := range ids {
+			if s, ok := id.(string); ok && s != "" {
+				links = append(links, s)
+			}
+		}
+	} else if id, _ := src["world_book_id"].(string); id != "" {
+		links = append(links, id)
+	}
 	var card map[string]any
 	if err := p.c.call(ctx, "GET", "/characters/"+url.PathEscape(in.RemoteID)+"/export?format=json", nil, &card); err != nil {
 		return nil, err
@@ -272,7 +288,8 @@ func (p *plugin) get(ctx context.Context, params json.RawMessage) (any, error) {
 		switch {
 		case k == "character_version":
 			data[k] = v
-		case isLocal(k) || k == innkeeperKey || k == "character_book":
+		// SillyTavern's own keys, carried in by a SillyTavern import.
+		case isLocal(k) || k == innkeeperKey || k == "character_book" || k == "fav" || k == "world":
 		default:
 			ext[k] = v
 		}
@@ -283,7 +300,7 @@ func (p *plugin) get(ctx context.Context, params json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	res := protocol.TargetGetResult{Card: raw}
+	res := protocol.TargetGetResult{Card: raw, LorebookRemoteIDs: links}
 	if in.Avatar {
 		if res.Avatar, err = p.avatar(ctx, in.RemoteID); err != nil {
 			return nil, err

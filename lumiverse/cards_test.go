@@ -127,6 +127,50 @@ func TestGetCharacter(t *testing.T) {
 	}
 }
 
+func TestGetReturnsTheWorldBookLinks(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(t, f, "owner", fakePassword)
+	links := func(id string) []string {
+		t.Helper()
+		res, err := p.get(context.Background(), mustJSON(t, protocol.TargetGetParams{RemoteID: id}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.(protocol.TargetGetResult).LorebookRemoteIDs
+	}
+	id := put(t, p, protocol.TargetPutParams{Card: card(nil), Key: "k", LorebookRemoteIDs: []string{"wb1", "wb2"}})
+	if got := links(id); fmt.Sprint(got) != "[wb1 wb2]" {
+		t.Fatalf("links = %v", got)
+	}
+	f.characters["old"] = map[string]any{"id": "old", "name": "Old", "extensions": map[string]any{"world_book_id": "wb3"}}
+	if got := links("old"); fmt.Sprint(got) != "[wb3]" {
+		t.Fatalf("legacy links = %v", got)
+	}
+	f.characters["bare"] = map[string]any{"id": "bare", "name": "Bare"}
+	if got := links("bare"); got == nil || len(got) != 0 {
+		t.Fatalf("no links = %#v", got)
+	}
+}
+
+func TestGetDropsSillyTavernsKeys(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(t, f, "owner", fakePassword)
+	id := put(t, p, protocol.TargetPutParams{Card: card(nil), Key: "k"})
+	ext := object(f.characters[id]["extensions"])
+	ext["fav"], ext["world"] = true, "Dwarves"
+	res, err := p.get(context.Background(), mustJSON(t, protocol.TargetGetParams{RemoteID: id}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Data map[string]any `json:"data"`
+	}
+	_ = json.Unmarshal(res.(protocol.TargetGetResult).Card, &got)
+	if e := object(got.Data["extensions"]); e["fav"] != nil || e["world"] != nil {
+		t.Fatalf("extensions = %v", e)
+	}
+}
+
 // Lumiverse returns at most 1000 characters a page.
 func TestListCharacters(t *testing.T) {
 	f := newFake(t)
