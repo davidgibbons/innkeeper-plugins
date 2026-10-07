@@ -1,0 +1,71 @@
+name: publish
+
+# Releases each plugin version in index.toml that has no release yet, then
+# rebuilds the index Innkeeper installs from: the index.toml asset on the
+# "index" release, concatenated from every release's entry.toml.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency: publish
+
+env:
+  GOPRIVATE: github.com/davidgibbons/innkeeper
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # The core repo is private; a read-only deploy key on it lets Go fetch it.
+      - name: Read access to innkeeper
+        env:
+          DEPLOY_KEY: ${{ secrets.INNKEEPER_DEPLOY_KEY }}
+        run: |
+          test -n "$DEPLOY_KEY" || { echo "INNKEEPER_DEPLOY_KEY is not set; add a read-only deploy key for davidgibbons/innkeeper as a repository secret"; exit 1; }
+          mkdir -p -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' >> ~/.ssh/known_hosts
+          git config --global url."git@github.com:davidgibbons/innkeeper".insteadOf https://github.com/davidgibbons/innkeeper
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      # A plugin that fails the contract kit is never published.
+      - run: make check
+      - name: Release new plugin versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download"
+          for p in $(sed -n 's/^path = "\(.*\)"/\1/p' index.toml); do
+            name=$(sed -n 's/^name = "\(.*\)"/\1/p' "$p/plugin.toml")
+            version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$p/plugin.toml")
+            tag="$name-v$version"
+            if gh release view "$tag" >/dev/null 2>&1; then
+              continue
+            fi
+            go run ./internal/publish -out dist -url "$base" "$p"
+            gh release create "$tag" dist/"$tag"/* --target "$GITHUB_SHA" --latest=false \
+              --title "$name $version" --notes "$name $version for Innkeeper."
+          done
+      - name: Rebuild the published index
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          : > index-published.toml
+          for tag in $(gh release list --limit 1000 --json tagName --jq '.[].tagName | select(test("-v[0-9]"))'); do
+            gh release download "$tag" --pattern entry.toml --output - >> index-published.toml
+            echo >> index-published.toml
+          done
+          if ! gh release view index >/dev/null 2>&1; then
+            gh release create index --target "$GITHUB_SHA" --latest=false --title "Plugin index" \
+              --notes "index.toml for Innkeeper's official plugin source. Rebuilt on every push to main."
+          fi
+          cp index-published.toml index.toml
+          gh release upload index index.toml --clobber
