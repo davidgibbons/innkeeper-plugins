@@ -4,3 +4,5 @@
 /card-import/card-import
 /lumiverse/lumiverse
 /sillytavern/sillytavern
+# Releases built by internal/publish.
+/dist/

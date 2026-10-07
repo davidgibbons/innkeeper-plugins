@@ -25,3 +25,20 @@ that sets both the `protocol` package and the contract kit.
 2. Add an `index.toml` entry with the same name, version, protocol, and
    capabilities, plus a description.
 3. Ignore the built binary in `.gitignore`.
+
+## Publishing
+
+Every push to `main` releases each plugin version that has no release yet,
+tagged `<name>-v<version>`, with a tarball for linux/amd64 and linux/arm64.
+Bump `version` in both `plugin.toml` and `index.toml` to publish a change; a
+release is never rebuilt.
+
+The `index` release holds `index.toml`, which lists every released version.
+Innkeeper's default plugin source points at it:
+
+```text
+https://github.com/davidgibbons/innkeeper-plugins/releases/download/index/index.toml
+```
+
+To build a release locally, run
+`go run ./internal/publish -out dist -url <release download URL> <folder>`.
