@@ -1,5 +1,5 @@
 // Command card-codec is a codec plugin for character cards: CCv3, V2, and V1
-// as PNG and JSON.
+// as PNG and JSON. It also reads CharX.
 package main
 
 import (
@@ -14,7 +14,7 @@ import (
 	"github.com/davidgibbons/innkeeper/protocol"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 func main() {
 	// Set by initialize; requests run on other goroutines.

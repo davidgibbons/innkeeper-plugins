@@ -116,7 +116,7 @@ func (im *importer) importUpload(sha, name string) error {
 	return im.notify(protocol.NotifyProgress, protocol.Progress{Run: im.run, Done: 1, Total: 1})
 }
 
-// importFolder imports every .png and .json file under dir, a slash path
+// importFolder imports every .png, .json, and .charx file under dir, a slash path
 // inside config.folder, resuming after the file last.
 func (im *importer) importFolder(ctx context.Context, dir, last string) error {
 	if im.folder == "" {
@@ -143,7 +143,7 @@ func (im *importer) importFolder(ctx context.Context, dir, last string) error {
 			return err
 		}
 		ext := strings.ToLower(path.Ext(name))
-		if d.Type().IsRegular() && (ext == ".png" || ext == ".json") {
+		if d.Type().IsRegular() && (ext == ".png" || ext == ".json" || ext == ".charx") {
 			files = append(files, name)
 		}
 		return nil

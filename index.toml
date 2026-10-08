@@ -4,10 +4,10 @@
 [[plugin]]
 name = "card-codec"
 path = "card-codec"
-version = "0.1.0"
+version = "0.2.0"
 protocol = 1
 capabilities = ["codec"]
-description = "Read and write character cards: CCv3, V2, and V1, as PNG and JSON."
+description = "Read and write character cards: CCv3, V2, and V1, as PNG and JSON. Also reads CharX."
 
 [[plugin]]
 name = "password-login"
@@ -20,7 +20,7 @@ description = "Log in as the owner with one password."
 [[plugin]]
 name = "card-import"
 path = "card-import"
-version = "0.1.0"
+version = "0.2.0"
 protocol = 1
 capabilities = ["import"]
 description = "Import character cards and lorebooks from a folder or an uploaded file."

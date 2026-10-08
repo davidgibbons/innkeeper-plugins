@@ -155,6 +155,7 @@ func TestImportFolder(t *testing.T) {
 		"sub/seraphina.png": "testdata/v3-seraphina.png",
 		"seraphina.json":    "testdata/v2-seraphina.json",
 		"eldoria.json":      "testdata/eldoria.lorebook.json",
+		"mirelle.charx":     "testdata/v3-mirelle.charx",
 		"junk.json":         `{"theme": "dark"}`,
 		"notes.txt":         "not a card",
 	})
@@ -169,7 +170,7 @@ func TestImportFolder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"lorebook eldoria.json", "card seraphina.json", "card sub/seraphina.png"}
+	want := []string{"lorebook eldoria.json", "card mirelle.charx", "card seraphina.json", "card sub/seraphina.png"}
 	if got := rec.items(); !slices.Equal(got, want) {
 		t.Fatalf("emitted %q, want %q", got, want)
 	}
@@ -185,19 +186,19 @@ func TestImportFolder(t *testing.T) {
 		case protocol.Checkpoint:
 			cp = p
 		case protocol.EmitCard:
-			if strings.HasSuffix(p.Item, ".png") && filepath.Dir(p.Avatar) != tmp {
+			if !strings.HasSuffix(p.Item, ".json") && filepath.Dir(p.Avatar) != tmp {
 				t.Errorf("avatar %q is not in blob_tmp", p.Avatar)
 			}
 		}
 	}
-	if progress.Done != 4 || progress.Total != 4 || !strings.Contains(progress.Message, "1 file") {
-		t.Errorf("last progress = %+v; want 4 of 4, one file skipped", progress)
+	if progress.Done != 5 || progress.Total != 5 || !strings.Contains(progress.Message, "1 file") {
+		t.Errorf("last progress = %+v; want 5 of 5, one file skipped", progress)
 	}
 	if string(cp.Checkpoint) != `{"last":"sub/seraphina.png"}` {
 		t.Errorf("last checkpoint = %s", cp.Checkpoint)
 	}
 
-	rec, err = startImport(t, e, `{}`, `{"last": "junk.json"}`)
+	rec, err = startImport(t, e, `{}`, `{"last": "mirelle.charx"}`)
 	if want := []string{"card seraphina.json", "card sub/seraphina.png"}; err != nil || !slices.Equal(rec.items(), want) {
 		t.Errorf("resumed import emitted %q, %v; want %q", rec.items(), err, want)
 	}
