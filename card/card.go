@@ -1,5 +1,6 @@
 // Package card reads and writes character card files: CCv3, V2, and V1
-// cards as JSON, and as PNG images that carry the card in a text chunk.
+// cards as JSON, and as PNG images that carry the card in a text chunk. It
+// also reads CharX, a zip holding a CCv3 card.json and its assets.
 package card
 
 import (
@@ -42,10 +43,13 @@ const (
 )
 
 // Decode reads a card file. It returns the card as CCv3 JSON and, for a PNG,
-// the image without its card chunks. A CCv3 card comes back unchanged.
-// Every error wraps ErrNotCard. img is nil for JSON input and for Encode's
-// placeholder, which stands for no avatar.
+// the image without its card chunks, or for CharX, the main icon as a PNG.
+// A CCv3 card comes back unchanged. Every error wraps ErrNotCard. img is nil
+// for JSON input and for Encode's placeholder, which stands for no avatar.
 func Decode(b []byte) (card json.RawMessage, img []byte, err error) {
+	if isZip(b) {
+		return decodeCharX(b)
+	}
 	if !isPNG(b) {
 		card, err = toV3(b)
 		return card, nil, err
