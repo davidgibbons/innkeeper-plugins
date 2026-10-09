@@ -18,7 +18,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 // subject is who every login is. The owner sets it as the instance's owner_subject.
 const subject = "owner"
@@ -27,6 +27,11 @@ const subject = "owner"
 const cost = 12
 
 const form = `{"type": "object", "properties": {"password": {"type": "string", "format": "password", "title": "Password"}}, "required": ["password"]}`
+
+// minPassword is the shortest password setup accepts.
+const minPassword = 12
+
+const setupForm = `{"type": "object", "properties": {"password": {"type": "string", "format": "password", "title": "Password"}, "confirm": {"type": "string", "format": "password", "title": "Confirm password"}}, "required": ["password", "confirm"]}`
 
 func main() {
 	if len(os.Args) == 2 && os.Args[1] == "hash" {
@@ -55,6 +60,10 @@ func main() {
 		case protocol.MethodAuthComplete:
 			h, _ := hash.Load().(string)
 			return complete(h, params)
+		case protocol.MethodAuthSetup:
+			return protocol.AuthSetupResult{Form: json.RawMessage(setupForm)}, nil
+		case protocol.MethodAuthSetupComplete:
+			return setupComplete(params)
 		}
 		return nil, protocol.MethodNotFound(method)
 	}
@@ -82,6 +91,26 @@ func complete(hash string, params json.RawMessage) (any, error) {
 		return nil, protocol.NewError(-32000, "wrong password", false)
 	}
 	return nil, protocol.NewError(-32000, "password_hash is not a bcrypt hash: "+err.Error(), false)
+}
+
+// setupComplete checks a new password and returns its hash as the secret.
+func setupComplete(params json.RawMessage) (any, error) {
+	var p protocol.AuthSetupCompleteParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, protocol.NewError(protocol.CodeInvalidParams, err.Error(), false)
+	}
+	pw := p.Params["password"]
+	switch {
+	case pw != p.Params["confirm"]:
+		return nil, protocol.NewError(-32000, "the passwords don't match", false)
+	case len([]rune(pw)) < minPassword:
+		return nil, protocol.NewError(-32000, fmt.Sprintf("use at least %d characters", minPassword), false)
+	}
+	h, err := bcrypt.GenerateFromPassword([]byte(pw), cost)
+	if err != nil {
+		return nil, protocol.NewError(-32000, err.Error(), false)
+	}
+	return protocol.AuthSetupCompleteResult{Secrets: map[string]string{"password_hash": string(h)}, Subject: subject}, nil
 }
 
 // printHash reads a password line from r and writes its bcrypt hash to w.
