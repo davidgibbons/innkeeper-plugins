@@ -49,3 +49,22 @@ func TestHash(t *testing.T) {
 		t.Fatal("hashed an empty password")
 	}
 }
+
+func TestSetup(t *testing.T) {
+	res, err := setupComplete(json.RawMessage(`{"params": {"password": "correct horse battery", "confirm": "correct horse battery"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := res.(protocol.AuthSetupCompleteResult)
+	if r.Subject != subject || bcrypt.CompareHashAndPassword([]byte(r.Secrets["password_hash"]), []byte("correct horse battery")) != nil {
+		t.Fatalf("got %+v", r)
+	}
+	for _, bad := range []string{
+		`{"params": {"password": "correct horse battery", "confirm": "correct horse"}}`,
+		`{"params": {"password": "short", "confirm": "short"}}`,
+	} {
+		if _, err := setupComplete(json.RawMessage(bad)); err == nil {
+			t.Errorf("%s: accepted", bad)
+		}
+	}
+}
