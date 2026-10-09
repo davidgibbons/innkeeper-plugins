@@ -31,7 +31,8 @@ that sets both the `protocol` package and the contract kit.
 Every push to `main` releases each plugin version that has no release yet,
 tagged `<name>-v<version>`, with a tarball for linux/amd64 and linux/arm64.
 Bump `version` in both `plugin.toml` and `index.toml` to publish a change; a
-release is never rebuilt.
+release is never rebuilt. A `category` change needs no bump: the published
+index takes every version's category from `index.toml`.
 
 The `index` release holds `index.toml`, which lists every released version.
 Innkeeper's default plugin source points at it:

@@ -63,6 +63,7 @@ jobs:
             gh release download "$tag" --pattern entry.toml --output - >> index-published.toml
             echo >> index-published.toml
           done
+          go run ./internal/publish -categorize index-published.toml
           if ! gh release view index >/dev/null 2>&1; then
             gh release create index --target "$GITHUB_SHA" --latest=false --title "Plugin index" \
               --notes "index.toml for Innkeeper's official plugin source. Rebuilt on every push to main."

@@ -3,6 +3,8 @@
 // the repo root; .github/workflows/publish.yml uploads what it writes.
 //
 //	go run ./internal/publish -out dist -url https://github.com/<owner>/<repo>/releases/download card-codec
+//
+// With -categorize it instead updates a published index's categories in place.
 package main
 
 import (
@@ -52,7 +54,15 @@ type entry struct {
 func main() {
 	out := flag.String("out", "dist", "folder to write releases into, one subfolder per tag")
 	base := flag.String("url", "", "release download URL, up to /releases/download")
+	categorized := flag.String("categorize", "", "published index to update with index.toml's categories")
 	flag.Parse()
+	if *categorized != "" {
+		if err := categorize(".", *categorized); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if *base == "" || flag.NArg() == 0 {
 		fmt.Fprintln(os.Stderr, "usage: publish -out <dir> -url <release download URL> <plugin folder>...")
 		os.Exit(2)
@@ -114,6 +124,36 @@ func publish(root, out, base, folder string) (string, error) {
 	}
 	defer f.Close()
 	return tag, toml.NewEncoder(f).Encode(map[string][]entry{"plugin": {*e}})
+}
+
+// categorize sets each plugin's category in the published index at path from
+// index.toml. A category belongs to the plugin, not a version, and a release's
+// entry.toml is never rebuilt.
+func categorize(root, path string) error {
+	var repo, published struct {
+		Plugin []entry `toml:"plugin"`
+	}
+	if _, err := toml.DecodeFile(filepath.Join(root, "index.toml"), &repo); err != nil {
+		return err
+	}
+	if _, err := toml.DecodeFile(path, &published); err != nil {
+		return err
+	}
+	category := map[string]string{}
+	for _, e := range repo.Plugin {
+		category[e.Name] = e.Category
+	}
+	for i, e := range published.Plugin {
+		if c, ok := category[e.Name]; ok {
+			published.Plugin[i].Category = c
+		}
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return toml.NewEncoder(f).Encode(published)
 }
 
 // tarball builds folder for one platform and packs the binary with its
