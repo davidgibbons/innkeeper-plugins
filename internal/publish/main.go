@@ -16,11 +16,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
 	"github.com/davidgibbons/innkeeper/protocol"
 )
+
+// now is a variable so the test can fix the date.
+var now = time.Now
 
 var platforms = []struct{ OS, Arch string }{{"linux", "amd64"}, {"linux", "arm64"}}
 
@@ -36,7 +40,9 @@ type artifact struct {
 type entry struct {
 	Name         string     `toml:"name"`
 	Path         string     `toml:"path,omitempty"`
+	Category     string     `toml:"category,omitempty"`
 	Version      string     `toml:"version"`
+	Released     string     `toml:"released,omitempty"`
 	Protocol     int        `toml:"protocol"`
 	Capabilities []string   `toml:"capabilities"`
 	Description  string     `toml:"description"`
@@ -88,6 +94,8 @@ func publish(root, out, base, folder string) (string, error) {
 		return "", err
 	}
 	e.Path = ""
+	// The publish date, so the setup wizard can show how new a version is.
+	e.Released = now().UTC().Format(time.DateOnly)
 	for _, p := range platforms {
 		tgz, err := tarball(root, folder, m, p.OS, p.Arch)
 		if err != nil {

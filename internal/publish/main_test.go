@@ -10,11 +10,13 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
 
 func TestPublish(t *testing.T) {
+	now = func() time.Time { return time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC) }
 	out := t.TempDir()
 	tag, err := publish("../..", out, "https://example.com/dl", "password-login")
 	if err != nil {
@@ -31,6 +33,9 @@ func TestPublish(t *testing.T) {
 	}
 	if len(index.Plugin) != 1 || len(index.Plugin[0].Artifact) != len(platforms) || index.Plugin[0].Path != "" {
 		t.Fatalf("entry = %+v", index.Plugin)
+	}
+	if e := index.Plugin[0]; e.Category != "Login" || e.Released != "2026-10-06" {
+		t.Fatalf("category = %q, released = %q", e.Category, e.Released)
 	}
 	for _, a := range index.Plugin[0].Artifact {
 		file := filepath.Join(out, tag, filepath.Base(a.URL))
