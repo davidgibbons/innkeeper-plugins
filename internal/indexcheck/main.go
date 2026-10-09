@@ -17,6 +17,7 @@ import (
 type entry struct {
 	Name         string   `toml:"name"`
 	Path         string   `toml:"path"`
+	Category     string   `toml:"category"`
 	Version      string   `toml:"version"`
 	Protocol     int      `toml:"protocol"`
 	Capabilities []string `toml:"capabilities"`

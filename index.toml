@@ -3,6 +3,7 @@
 
 [[plugin]]
 name = "card-codec"
+category = "Formats"
 path = "card-codec"
 version = "0.2.0"
 protocol = 1
@@ -11,6 +12,7 @@ description = "Read and write character cards: CCv3, V2, and V1, as PNG and JSON
 
 [[plugin]]
 name = "password-login"
+category = "Login"
 path = "password-login"
 version = "0.2.0"
 protocol = 1
@@ -19,6 +21,7 @@ description = "Log in as the owner with one password."
 
 [[plugin]]
 name = "card-import"
+category = "Import"
 path = "card-import"
 version = "0.2.0"
 protocol = 1
@@ -27,6 +30,7 @@ description = "Import character cards and lorebooks from a folder or an uploaded
 
 [[plugin]]
 name = "lumiverse"
+category = "Apps"
 path = "lumiverse"
 version = "0.1.0"
 protocol = 1
@@ -35,6 +39,7 @@ description = "Push cards and lorebooks to a Lumiverse server as characters and 
 
 [[plugin]]
 name = "sillytavern"
+category = "Apps"
 path = "sillytavern"
 version = "0.1.0"
 protocol = 1
