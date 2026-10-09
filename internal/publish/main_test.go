@@ -64,3 +64,31 @@ func TestPublish(t *testing.T) {
 		}
 	}
 }
+
+func TestCategorize(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "index.toml")
+	published := `[[plugin]]
+name = "password-login"
+version = "0.1.0"
+
+[[plugin]]
+name = "retired"
+category = "Old"
+version = "0.1.0"
+`
+	if err := os.WriteFile(path, []byte(published), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := categorize("../..", path); err != nil {
+		t.Fatal(err)
+	}
+	var index struct {
+		Plugin []entry `toml:"plugin"`
+	}
+	if _, err := toml.DecodeFile(path, &index); err != nil {
+		t.Fatal(err)
+	}
+	if len(index.Plugin) != 2 || index.Plugin[0].Category != "Login" || index.Plugin[1].Category != "Old" {
+		t.Fatalf("index = %+v", index.Plugin)
+	}
+}
