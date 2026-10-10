@@ -198,3 +198,20 @@ func TestIngestKeepsInstancesApart(t *testing.T) {
 		t.Fatalf("first instance lists %v", got)
 	}
 }
+
+// A subfolder ingest can't read hides its files, which aren't gone.
+func TestIngestSkipsSweepAfterPartialWalk(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a folder without permission")
+	}
+	e := testEnv(t)
+	runIngest(t, e, "")
+	dir := filepath.Join(e.folder, "fantasy/elves")
+	if err := os.Chmod(dir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+	if res, _ := runIngest(t, e, ""); res != (protocol.CatalogIngestResult{}) {
+		t.Fatalf("ingest with an unreadable subfolder = %+v, want nothing", res)
+	}
+}

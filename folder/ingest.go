@@ -50,7 +50,7 @@ func ingest(ctx context.Context, e *env, notify func(string, any) error, raw jso
 		return res, invalid(fmt.Errorf("config folder: %w", err))
 	}
 	defer root.Close()
-	files, err := walk(root)
+	files, partial, err := walk(root)
 	if err != nil {
 		return res, invalid(err)
 	}
@@ -83,6 +83,11 @@ func ingest(ctx context.Context, e *env, notify func(string, any) error, raw jso
 			}
 		}
 	}
+	// Files under a folder walk couldn't read aren't gone.
+	if partial {
+		log.Printf("skipped marking removed items: some folders couldn't be read")
+		return res, nil
+	}
 	if res.Removed, err = e.store.MarkRemovedExcept(ctx, files); err != nil {
 		return res, err
 	}
@@ -92,15 +97,17 @@ func ingest(ctx context.Context, e *env, notify func(string, any) error, raw jso
 }
 
 // walk lists the card and lorebook files under root in lexical order,
-// skipping hidden folders and logging unreadable ones.
-func walk(root *os.Root) ([]string, error) {
-	files := []string{}
-	err := fs.WalkDir(root.FS(), ".", func(name string, d fs.DirEntry, err error) error {
+// skipping hidden folders. partial reports that it skipped something it
+// couldn't read.
+func walk(root *os.Root) (files []string, partial bool, err error) {
+	files = []string{}
+	err = fs.WalkDir(root.FS(), ".", func(name string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if name == "." {
 				return err
 			}
 			log.Printf("skipped %s: %v", name, err)
+			partial = true
 			return nil
 		}
 		if d.IsDir() && name != "." && strings.HasPrefix(d.Name(), ".") {
@@ -112,7 +119,7 @@ func walk(root *os.Root) ([]string, error) {
 		}
 		return nil
 	})
-	return files, err
+	return files, partial, err
 }
 
 // ingestFile indexes one file unless its mtime and size match the last
