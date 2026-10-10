@@ -16,6 +16,7 @@ import (
 	"github.com/davidgibbons/innkeeper/cardhash"
 	"github.com/davidgibbons/innkeeper/protocol"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/image/draw"
 )
 
@@ -98,16 +99,26 @@ func (s *Store) Put(ctx context.Context, e Entry) (Change, error) {
 		e.ID, e.Kind, d.name, d.author, d.tags, d.summary, d.description, string(attrs), e.Updated, latest,
 		version, d.contentHash, d.dataHash, d.simhash, d.phash, lsh(d.simhash, d.phash), d.thumbnail)
 	if err != nil {
-		return 0, err
+		return 0, badData(e.ID, err)
 	}
 	if newVersion {
 		_, err = tx.Exec(ctx, `INSERT INTO item_version (item_id, seq, version, created, data) VALUES ($1, $2, $3, $4, $5)`,
 			e.ID, latest, version, e.Updated, string(e.Data))
 		if err != nil {
-			return 0, err
+			return 0, badData(e.ID, err)
 		}
 	}
 	return change, tx.Commit(ctx)
+}
+
+// badData wraps a data exception (SQLSTATE class 22), such as a NUL in text or
+// invalid UTF-8 in json, in ErrBadData so an ingest skips the entry.
+func badData(id string, err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && strings.HasPrefix(pgErr.Code, "22") {
+		return fmt.Errorf("%w: %s: %w", ErrBadData, id, err)
+	}
+	return err
 }
 
 // MarkRemovedExcept marks every item not in keep removed and returns how

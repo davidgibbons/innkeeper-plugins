@@ -158,3 +158,22 @@ func TestPutVersionsOnEmbeddedLorebookChange(t *testing.T) {
 		t.Fatalf("latest_version = %q, err %v; want 2", latest, err)
 	}
 }
+
+// Postgres refuses a NUL in text and invalid UTF-8 in json; both are the entry's fault.
+func TestPutRefusesDataPostgresRejects(t *testing.T) {
+	card := func(name string) json.RawMessage {
+		return json.RawMessage(`{"spec":"chara_card_v3","spec_version":"3.0","data":{"name":"` + name + `"}}`)
+	}
+	for name, data := range map[string]json.RawMessage{
+		"NUL escape":    card(`a\u0000b`),
+		"invalid UTF-8": card("a\xffb"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := openTest(t)
+			_, err := s.Put(context.Background(), Entry{ID: "x", Kind: protocol.KindCard, Data: data, Updated: t0})
+			if !errors.Is(err, ErrBadData) {
+				t.Fatalf("err = %v, want ErrBadData", err)
+			}
+		})
+	}
+}
