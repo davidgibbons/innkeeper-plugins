@@ -8,9 +8,12 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"math/rand/v2"
 	"slices"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/davidgibbons/innkeeper/protocol"
 )
@@ -177,6 +180,43 @@ func TestPutRefusesDataPostgresRejects(t *testing.T) {
 				t.Fatalf("err = %v, want ErrBadData", err)
 			}
 		})
+	}
+}
+
+// randomWords returns n distinct-looking words of random letters, which
+// neither compress nor stem together.
+func randomWords(n int) string {
+	var b strings.Builder
+	for range n {
+		for range 8 {
+			b.WriteByte(byte('a' + rand.IntN(26)))
+		}
+		b.WriteByte(' ')
+	}
+	return b.String()
+}
+
+// A long name is kept, cut short; it would otherwise overflow the name index.
+func TestPutTruncatesLongName(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	name := randomWords(600) // about 5 KB
+	put(t, s, Entry{ID: "long", Kind: protocol.KindCard, Data: testCard(name, "One."), Updated: t0})
+	var got string
+	if err := s.pool.QueryRow(ctx, `SELECT name FROM item WHERE id = 'long'`).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if n := utf8.RuneCountInString(got); n > 501 || !strings.HasPrefix(name, strings.TrimSuffix(got, "…")) {
+		t.Fatalf("name is %d runes: %.40q…", n, got)
+	}
+}
+
+// A description past Postgres's tsvector limit is the entry's fault, not the ingest's.
+func TestPutRefusesHugeDescription(t *testing.T) {
+	s := openTest(t)
+	_, err := s.Put(context.Background(), Entry{ID: "huge", Kind: protocol.KindCard, Data: testCard("Huge", randomWords(200_000)), Updated: t0})
+	if !errors.Is(err, ErrBadData) {
+		t.Fatalf("err = %v, want ErrBadData", err)
 	}
 }
 

@@ -163,11 +163,12 @@ func (s *Store) Put(ctx context.Context, e Entry) (Change, error) {
 }
 
 // BadData wraps a data exception (SQLSTATE class 22), such as a NUL in text
-// or invalid UTF-8 in json, in ErrBadData, so an ingest skips the entry
+// or invalid UTF-8 in json, or a program limit exceeded (54000), such as text
+// too long for a tsvector, in ErrBadData, so an ingest skips the entry
 // instead of failing.
 func BadData(id string, err error) error {
 	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && strings.HasPrefix(pgErr.Code, "22") {
+	if errors.As(err, &pgErr) && (strings.HasPrefix(pgErr.Code, "22") || pgErr.Code == "54000") {
 		return fmt.Errorf("%w: %s: %w", ErrBadData, id, err)
 	}
 	return err
@@ -252,6 +253,8 @@ func derive(e Entry) (derived, error) {
 	if a := strings.TrimSpace(e.Author); a != "" {
 		d.author = a
 	}
+	// 500 runes fit the btree row limit of the name index, even at 4 bytes each.
+	d.name, d.author = truncate(d.name, 500), truncate(d.author, 500)
 	if e.Image != nil {
 		p := cardhash.Phash(e.Image)
 		d.phash = &p
