@@ -1,0 +1,14 @@
+name = "folder"
+version = "0.1.0"
+protocol = 1
+command = ["./folder"]
+capabilities = ["catalog"]
+database = true
+
+[config]
+type = "object"
+
+[config.properties.folder]
+type = "string"
+title = "Folder"
+description = "Absolute path of the folder to index, as the core sees it, such as /archive."

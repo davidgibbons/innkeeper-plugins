@@ -50,3 +50,13 @@ func WriteTmp(tmp, pattern string, b []byte) (string, error) {
 	}
 	return f.Name(), nil
 }
+
+// ReadIn reads the file name inside root, failing if it is over MaxInput.
+func ReadIn(root *os.Root, name string) ([]byte, error) {
+	f, err := root.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return ReadAll(f)
+}

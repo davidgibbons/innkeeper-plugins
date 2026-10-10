@@ -6,7 +6,8 @@ tool github.com/davidgibbons/innkeeper/cmd/innkeeper
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/davidgibbons/innkeeper v0.3.1-0.20261009000720-de84446837a5
+	github.com/davidgibbons/innkeeper v1.0.1-0.20261010035606-f13164afa1f1
+	github.com/jackc/pgx/v5 v5.11.0
 	golang.org/x/crypto v0.57.0
 	golang.org/x/image v0.46.0
 )
@@ -17,7 +18,6 @@ require (
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/pgx/v5 v5.11.0 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/modelcontextprotocol/go-sdk v1.8.0 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
