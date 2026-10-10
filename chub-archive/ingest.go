@@ -55,7 +55,7 @@ func ingest(ctx context.Context, e *env, notify func(string, any) error, raw jso
 	}
 	defer d.Close()
 	report := func() error {
-		if err := notify(protocol.NotifyProgress, protocol.Progress{Run: p.Run, Done: d.at.Offset, Total: d.size}); err != nil {
+		if err := notify(protocol.NotifyProgress, protocol.Progress{Run: p.Run, Done: d.at.Offset, Total: d.at.Size}); err != nil {
 			return err
 		}
 		cp, _ := json.Marshal(d.at)

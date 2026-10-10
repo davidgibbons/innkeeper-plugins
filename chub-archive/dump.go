@@ -30,7 +30,6 @@ type dump struct {
 	f     *os.File
 	r     *bufio.Reader
 	at    checkpoint
-	size  int64
 	lines int64 // read since open, to check for a cancel now and then
 }
 
@@ -58,7 +57,7 @@ func openDump(path string, at checkpoint) (*dump, error) {
 		return nil, err
 	}
 	at.Size = info.Size()
-	return &dump{f: f, r: bufio.NewReaderSize(f, 1<<20), at: at, size: info.Size()}, nil
+	return &dump{f: f, r: bufio.NewReaderSize(f, 1<<20), at: at}, nil
 }
 
 func (d *dump) Close() error { return d.f.Close() }
