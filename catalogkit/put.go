@@ -66,6 +66,11 @@ func (s *Store) Put(ctx context.Context, e Entry) (Change, error) {
 	}
 	defer tx.Rollback(ctx)
 
+	// FOR UPDATE locks nothing when the row is missing, so two new puts of one id would both insert version 1.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('catalogkit-item:' || $1))`, e.ID); err != nil {
+		return 0, err
+	}
+
 	var hash string
 	var latest int
 	var removed bool
