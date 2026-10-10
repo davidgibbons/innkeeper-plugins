@@ -164,3 +164,14 @@ func TestIngestFailsOnUnreadableImage(t *testing.T) {
 		t.Fatalf("Aria was stored without her image: %v", got)
 	}
 }
+
+// A checkpoint from another dump would resume mid-line, so it is refused.
+func TestIngestRefusesAnotherDumpsCheckpoint(t *testing.T) {
+	e := testEnv(t)
+	params, _ := json.Marshal(protocol.CatalogIngestParams{Run: "r", Checkpoint: json.RawMessage(`{"offset": 10, "size": 1}`)})
+	_, err := ingest(context.Background(), e, func(string, any) error { return nil }, params)
+	var rpc *protocol.Error
+	if !errors.As(err, &rpc) || rpc.Code != protocol.CodeInvalidParams || !strings.Contains(err.Error(), "changed") {
+		t.Fatalf("err = %v, want invalid params saying the dump changed", err)
+	}
+}

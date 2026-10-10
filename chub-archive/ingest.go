@@ -38,6 +38,9 @@ func ingest(ctx context.Context, e *env, notify func(string, any) error, raw jso
 		}
 	}
 	d, err := openDump(e.dump, at)
+	if errors.Is(err, errDumpChanged) {
+		return res, invalid(err)
+	}
 	if err != nil {
 		return res, invalid(fmt.Errorf("config dump: %w", err))
 	}

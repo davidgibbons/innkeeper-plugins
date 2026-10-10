@@ -16,11 +16,13 @@ import (
 var errBadRow = errors.New("bad row")
 
 // checkpoint is where ingest is in the dump: the byte offset of the next
-// line, and the COPY block it is in, if any.
+// line, and the COPY block it is in, if any. Size is the dump's, so a
+// checkpoint isn't used on another dump.
 type checkpoint struct {
 	Table   string   `json:"table,omitempty"`
 	Columns []string `json:"columns,omitempty"`
 	Offset  int64    `json:"offset"`
+	Size    int64    `json:"size,omitempty"`
 }
 
 // dump reads the rows of a pg_dump plain-text file's COPY blocks.
@@ -34,13 +36,20 @@ type dump struct {
 
 var copyHeader = regexp.MustCompile(`^COPY public\.(\w+) \((.*)\) FROM stdin;$`)
 
-// openDump opens the dump at path, positioned at at.
+// errDumpChanged means a checkpoint was taken on a dump of another size.
+var errDumpChanged = errors.New("the dump changed since the checkpoint")
+
+// openDump opens the dump at path, positioned at at. It refuses a checkpoint
+// taken on a dump of another size.
 func openDump(path string, at checkpoint) (*dump, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	info, err := f.Stat()
+	if err == nil && at.Size != 0 && at.Size != info.Size() {
+		err = fmt.Errorf("%w: it was %d bytes, and is %d", errDumpChanged, at.Size, info.Size())
+	}
 	if err == nil {
 		_, err = f.Seek(at.Offset, io.SeekStart)
 	}
@@ -48,6 +57,7 @@ func openDump(path string, at checkpoint) (*dump, error) {
 		f.Close()
 		return nil, err
 	}
+	at.Size = info.Size()
 	return &dump{f: f, r: bufio.NewReaderSize(f, 1<<20), at: at, size: info.Size()}, nil
 }
 

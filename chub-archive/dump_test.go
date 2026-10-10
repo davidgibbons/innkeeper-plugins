@@ -52,7 +52,7 @@ func TestDumpRows(t *testing.T) {
 	if len(rows) != 12 || rows[0] != "booru_character_def:Coracat" || rows[1] != "chub_character:Ariaann" {
 		t.Fatalf("rows = %v", rows)
 	}
-	if d.at.Offset != d.size || d.at.Table != "" {
+	if d.at.Offset != d.size || d.at.Size != d.size || d.at.Table != "" {
 		t.Fatalf("ended at %+v of %d", d.at, d.size)
 	}
 
