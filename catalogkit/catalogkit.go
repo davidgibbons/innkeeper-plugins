@@ -152,6 +152,7 @@ CREATE TABLE item (
 	latest integer NOT NULL,
 	latest_version text NOT NULL,
 	content_hash text NOT NULL,
+	data_hash text NOT NULL,
 	text_simhash bigint,
 	image_phash bigint,
 	lsh integer[] NOT NULL DEFAULT '{}',

@@ -68,7 +68,7 @@ func (s *Store) Put(ctx context.Context, e Entry) (Change, error) {
 	var hash string
 	var latest int
 	var removed bool
-	err = tx.QueryRow(ctx, `SELECT content_hash, latest, removed FROM item WHERE id = $1 FOR UPDATE`, e.ID).
+	err = tx.QueryRow(ctx, `SELECT data_hash, latest, removed FROM item WHERE id = $1 FOR UPDATE`, e.ID).
 		Scan(&hash, &latest, &removed)
 	change, newVersion := Unchanged, true
 	switch {
@@ -76,7 +76,7 @@ func (s *Store) Put(ctx context.Context, e Entry) (Change, error) {
 		change, latest = Added, 1
 	case err != nil:
 		return 0, err
-	case hash != d.contentHash:
+	case hash != d.dataHash:
 		change, latest = Updated, latest+1
 	default:
 		newVersion = false
@@ -87,16 +87,16 @@ func (s *Store) Put(ctx context.Context, e Entry) (Change, error) {
 	version := strconv.Itoa(latest)
 	_, err = tx.Exec(ctx, `
 		INSERT INTO item (id, kind, name, author, tags, summary, description, attrs, updated, latest,
-			latest_version, content_hash, text_simhash, image_phash, lsh, thumbnail)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+			latest_version, content_hash, data_hash, text_simhash, image_phash, lsh, thumbnail)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 		ON CONFLICT (id) DO UPDATE SET kind = excluded.kind, name = excluded.name, author = excluded.author,
 			tags = excluded.tags, summary = excluded.summary, description = excluded.description,
 			attrs = excluded.attrs, updated = excluded.updated, latest = excluded.latest,
-			latest_version = excluded.latest_version, content_hash = excluded.content_hash,
+			latest_version = excluded.latest_version, content_hash = excluded.content_hash, data_hash = excluded.data_hash,
 			text_simhash = excluded.text_simhash, image_phash = excluded.image_phash, lsh = excluded.lsh,
 			thumbnail = excluded.thumbnail, removed = false`,
 		e.ID, e.Kind, d.name, d.author, d.tags, d.summary, d.description, string(attrs), e.Updated, latest,
-		version, d.contentHash, d.simhash, d.phash, lsh(d.simhash, d.phash), d.thumbnail)
+		version, d.contentHash, d.dataHash, d.simhash, d.phash, lsh(d.simhash, d.phash), d.thumbnail)
 	if err != nil {
 		return 0, err
 	}
@@ -125,7 +125,7 @@ func (s *Store) MarkRemovedExcept(ctx context.Context, keep []string) (int64, er
 type derived struct {
 	name, author, summary, description string
 	tags                               []string
-	contentHash                        string
+	contentHash, dataHash              string
 	simhash, phash                     *int64
 	thumbnail                          []byte
 }
@@ -158,6 +158,10 @@ func derive(e Entry) (derived, error) {
 		d.simhash = &sim
 	}
 	if d.contentHash, err = cardhash.ContentHash(hashed); err != nil {
+		return d, err
+	}
+	// The whole entry, so edits content_hash ignores (an embedded lorebook) still version.
+	if d.dataHash, err = cardhash.ContentHash(e.Data); err != nil {
 		return d, err
 	}
 	var m map[string]any

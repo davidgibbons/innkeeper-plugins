@@ -138,3 +138,23 @@ func shareBand(a, b []int32) bool {
 }
 
 func bytesReader(b []byte) *bytes.Reader { return bytes.NewReader(b) }
+
+func TestPutVersionsOnEmbeddedLorebookChange(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	e := Entry{ID: "book.json", Kind: protocol.KindCard, Data: testCard("Ann", "One."), Updated: t0}
+	if _, err := s.Put(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	var card map[string]any
+	_ = json.Unmarshal(e.Data, &card)
+	card["data"].(map[string]any)["character_book"] = map[string]any{"entries": []any{}, "name": "lore"}
+	e.Data, _ = json.Marshal(card)
+	if c, err := s.Put(ctx, e); err != nil || c != Updated {
+		t.Fatalf("change = %v, err %v; want Updated", c, err)
+	}
+	var latest string
+	if err := s.pool.QueryRow(ctx, `SELECT latest_version FROM item WHERE id = 'book.json'`).Scan(&latest); err != nil || latest != "2" {
+		t.Fatalf("latest_version = %q, err %v; want 2", latest, err)
+	}
+}
