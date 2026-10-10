@@ -215,3 +215,34 @@ func TestIngestSkipsSweepAfterPartialWalk(t *testing.T) {
 		t.Fatalf("ingest with an unreadable subfolder = %+v, want nothing", res)
 	}
 }
+
+// A card that stops decoding leaves search, and comes back once fixed.
+func TestIngestDropsUndecodableFile(t *testing.T) {
+	e := testEnv(t)
+	runIngest(t, e, "")
+	const id = "fantasy/mirelle.json"
+	path := filepath.Join(e.folder, id)
+	good, _ := os.ReadFile(path)
+	writeAt := func(s string, at time.Time) {
+		writeFile(t, path, s)
+		if err := os.Chtimes(path, at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writeAt("garbage", time.Now().Add(time.Minute))
+	if res, _ := runIngest(t, e, ""); res != (protocol.CatalogIngestResult{Skipped: 1, Removed: 1}) {
+		t.Fatalf("after corrupting a card = %+v", res)
+	}
+	if slices.Contains(ids(t, e, protocol.CatalogSearchParams{}), id) {
+		t.Fatal("search still lists the corrupt card")
+	}
+
+	writeAt(string(good), time.Now().Add(2*time.Minute))
+	if res, _ := runIngest(t, e, ""); res != (protocol.CatalogIngestResult{Updated: 1}) {
+		t.Fatalf("after fixing the card = %+v", res)
+	}
+	if !slices.Contains(ids(t, e, protocol.CatalogSearchParams{}), id) {
+		t.Fatal("search doesn't list the fixed card")
+	}
+}

@@ -56,6 +56,7 @@ func ingest(ctx context.Context, e *env, notify func(string, any) error, raw jso
 	}
 	// ponytail: if last is gone, the ingest starts over; unchanged files cost a stat each.
 	start := slices.Index(files, cp.Last) + 1
+	skipped := map[string]bool{}
 	for i := start; i < len(files); i++ {
 		if err := ctx.Err(); err != nil {
 			return res, err
@@ -67,6 +68,7 @@ func ingest(ctx context.Context, e *env, notify func(string, any) error, raw jso
 		switch {
 		case skip != nil:
 			res.Skipped++
+			skipped[files[i]] = true
 			log.Printf("skipped %s: %v", files[i], skip)
 		case change == catalogkit.Added:
 			res.Added++
@@ -88,7 +90,11 @@ func ingest(ctx context.Context, e *env, notify func(string, any) error, raw jso
 		log.Printf("skipped marking removed items: some folders couldn't be read")
 		return res, nil
 	}
-	if res.Removed, err = e.store.MarkRemovedExcept(ctx, files); err != nil {
+	// A skipped file's item leaves search, but its file row stays so an
+	// unchanged broken file isn't read every run.
+	// ponytail: a resume only knows skips after the checkpoint; a file that broke before it stays listed until it changes again.
+	keep := slices.DeleteFunc(slices.Clone(files), func(f string) bool { return skipped[f] })
+	if res.Removed, err = e.store.MarkRemovedExcept(ctx, keep); err != nil {
 		return res, err
 	}
 	// A file that comes back unchanged must be read again to restore its item.
