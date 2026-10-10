@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"os"
 	"strconv"
 	"syscall"
 
@@ -38,6 +39,11 @@ func ingest(ctx context.Context, e *env, notify func(string, any) error, raw jso
 	if len(p.Checkpoint) > 0 && string(p.Checkpoint) != "null" {
 		if err := json.Unmarshal(p.Checkpoint, &at); err != nil {
 			return res, invalid(fmt.Errorf("checkpoint: %w", err))
+		}
+	}
+	for _, dir := range e.images {
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			return res, invalid(fmt.Errorf("config images: %s is not a folder; is the archive mounted?", dir))
 		}
 	}
 	d, err := openDump(e.dump, at)

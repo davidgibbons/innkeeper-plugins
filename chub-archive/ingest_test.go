@@ -193,3 +193,17 @@ func TestIngestRefusesAnotherDumpsCheckpoint(t *testing.T) {
 		t.Fatalf("err = %v, want invalid params saying the dump changed", err)
 	}
 }
+
+// An unmounted image folder would store every version without its image for good.
+func TestIngestNeedsTheImageFolders(t *testing.T) {
+	for _, dir := range []string{"testdata/missing", "testdata/dump.sql"} {
+		e := testEnv(t)
+		e.images = []string{"testdata/images", dir}
+		params, _ := json.Marshal(protocol.CatalogIngestParams{Run: "r"})
+		_, err := ingest(context.Background(), e, func(string, any) error { return nil }, params)
+		var rpc *protocol.Error
+		if !errors.As(err, &rpc) || rpc.Code != protocol.CodeInvalidParams {
+			t.Fatalf("%s: err = %v, want invalid params", dir, err)
+		}
+	}
+}
