@@ -7,6 +7,7 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	"math"
 	"slices"
 	"testing"
 	"time"
@@ -247,9 +248,32 @@ func TestPutPluginVersions(t *testing.T) {
 	if res.Item.Name != "Nine" || res.Version != "9" || !slices.Equal(versions, []string{"9", "7", "5"}) {
 		t.Fatalf("item %q at %q, versions %v", res.Item.Name, res.Version, versions)
 	}
+	if old, err := s.Get(ctx, "v", "7"); err != nil || !bytes.Contains(old.Data, []byte(`"Seven"`)) {
+		t.Fatalf("version 7: data %s, err %v", old.Data, err)
+	}
 	var added time.Time
 	if err := s.pool.QueryRow(ctx, `SELECT added FROM item WHERE id = 'v'`).Scan(&added); err != nil || !added.Equal(t0.Add(-time.Hour)) {
 		t.Fatalf("added = %v, %v; want the late version's earlier date", added, err)
+	}
+	// New data under a stored number changes neither the version nor the item.
+	if got, err := s.Put(ctx, e(9, "Ten", t0.Add(time.Hour))); err != nil || got != Unchanged {
+		t.Fatalf("reused number: %v, %v", got, err)
+	}
+	if again, err := s.Get(ctx, "v", ""); err != nil || again.Item.Name != "Nine" {
+		t.Fatalf("after reused number: %q, %v", again.Item.Name, err)
+	}
+	// An older new version of a removed item brings it back.
+	if _, err := s.MarkRemovedExcept(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Put(ctx, e(3, "Three", t0.Add(-2*time.Hour))); err != nil || got != Updated {
+		t.Fatalf("older version of removed item: %v, %v", got, err)
+	}
+	if ids := searchIDs(t, s, protocol.CatalogSearchParams{Sort: "name"}); !slices.Equal(ids, []string{"v"}) {
+		t.Fatalf("search after restore: %v", ids)
+	}
+	if _, err := s.Put(ctx, Entry{ID: "w", Kind: protocol.KindCard, Data: testCard("W", "W."), Updated: t0, Version: math.MaxInt32 + 1}); !errors.Is(err, ErrBadData) {
+		t.Fatalf("huge version: err = %v, want ErrBadData", err)
 	}
 	if _, err := s.Put(ctx, Entry{ID: "w", Kind: protocol.KindCard, Data: testCard("W", "W."), Updated: t0, Version: -1}); !errors.Is(err, ErrBadData) {
 		t.Fatalf("negative version: err = %v, want ErrBadData", err)

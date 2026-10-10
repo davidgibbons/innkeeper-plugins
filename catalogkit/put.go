@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -35,7 +36,8 @@ type Entry struct {
 	Attrs map[string][]string
 	// Numbers are the values nums.<key> filters match.
 	Numbers map[string]float64
-	// Author and Tags, when not empty, replace the creator and tags in Data.
+	// Author, when not empty, replaces the creator in Data. Tags replace the
+	// data's tags when it has any entries.
 	Author string
 	Tags   []string
 	// Added is when the source first listed the item, or zero for the time
@@ -59,9 +61,10 @@ const (
 
 // Put stores e. Data that hashes differently from the latest version adds a
 // version, or with e.Version set, a version number not seen before does.
-// Otherwise it only refreshes the item's other fields.
+// A version number already stored is left as it is. Otherwise Put only
+// refreshes the item's other fields.
 func (s *Store) Put(ctx context.Context, e Entry) (Change, error) {
-	if e.Version < 0 {
+	if e.Version < 0 || e.Version > math.MaxInt32 {
 		return 0, fmt.Errorf("%w: %s: version %d", ErrBadData, e.ID, e.Version)
 	}
 	d, err := derive(e)
@@ -76,11 +79,11 @@ func (s *Store) Put(ctx context.Context, e Entry) (Change, error) {
 	}
 	attrs, err := json.Marshal(e.Attrs)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("%w: %s: %w", ErrBadData, e.ID, err)
 	}
 	nums, err := json.Marshal(e.Numbers)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("%w: %s: %w", ErrBadData, e.ID, err)
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -112,13 +115,13 @@ func (s *Store) Put(ctx context.Context, e Entry) (Change, error) {
 		if err != nil {
 			return 0, err
 		}
-		current = e.Version >= latest
+		current = newVersion && e.Version >= latest
 	case hash != d.dataHash:
 		seq = latest + 1
 	default:
 		seq, newVersion = latest, false
 	}
-	if change == Unchanged && (newVersion || removed && current) {
+	if change == Unchanged && (newVersion || removed) {
 		change = Updated
 	}
 	version := strconv.Itoa(seq)
@@ -142,8 +145,9 @@ func (s *Store) Put(ctx context.Context, e Entry) (Change, error) {
 			version, d.contentHash, d.dataHash, d.simhash, d.phash, lsh(d.simhash, d.phash), d.thumbnail, s.instance,
 			string(nums), added)
 	} else {
-		// An older version only moves the date added back.
-		_, err = tx.Exec(ctx, `UPDATE item SET added = LEAST(added, $3) WHERE instance = $1 AND id = $2`, s.instance, e.ID, added)
+		// An older or repeated version only moves the date added back, and the
+		// source still lists the item.
+		_, err = tx.Exec(ctx, `UPDATE item SET added = LEAST(added, $3), removed = false WHERE instance = $1 AND id = $2`, s.instance, e.ID, added)
 	}
 	if err != nil {
 		return 0, BadData(e.ID, err)
