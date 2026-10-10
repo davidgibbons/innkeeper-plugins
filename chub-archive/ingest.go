@@ -53,7 +53,7 @@ func ingest(ctx context.Context, e *env, notify func(string, any) error, raw jso
 		if err := ctx.Err(); err != nil {
 			return res, err
 		}
-		table, row, err := d.next()
+		table, row, err := d.next(ctx)
 		if errors.Is(err, io.EOF) {
 			break
 		}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"io"
 	"strings"
@@ -28,7 +29,7 @@ func TestUnescape(t *testing.T) {
 func readAll(t *testing.T, d *dump) (rows []string, after []checkpoint) {
 	t.Helper()
 	for {
-		table, row, err := d.next()
+		table, row, err := d.next(context.Background())
 		if errors.Is(err, io.EOF) {
 			return rows, after
 		}
@@ -78,7 +79,7 @@ func TestDumpRowValues(t *testing.T) {
 	}
 	defer d.Close()
 	for {
-		table, row, err := d.next()
+		table, row, err := d.next(context.Background())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -93,5 +94,18 @@ func TestDumpRowValues(t *testing.T) {
 				t.Fatal("a NULL tagline should be absent")
 			}
 		}
+	}
+}
+
+func TestDumpSeesCancel(t *testing.T) {
+	d, err := openDump("testdata/dump.sql", checkpoint{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := d.next(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -24,10 +25,11 @@ type checkpoint struct {
 
 // dump reads the rows of a pg_dump plain-text file's COPY blocks.
 type dump struct {
-	f    *os.File
-	r    *bufio.Reader
-	at   checkpoint
-	size int64
+	f     *os.File
+	r     *bufio.Reader
+	at    checkpoint
+	size  int64
+	lines int64 // read since open, to check for a cancel now and then
 }
 
 var copyHeader = regexp.MustCompile(`^COPY public\.(\w+) \((.*)\) FROM stdin;$`)
@@ -54,8 +56,14 @@ func (d *dump) Close() error { return d.f.Close() }
 // next returns the next row of a table ingest reads, as column to value. A
 // NULL column is absent. It returns io.EOF after the last row, and errBadRow
 // for a row with the wrong number of fields.
-func (d *dump) next() (table string, row map[string]string, err error) {
+func (d *dump) next(ctx context.Context) (table string, row map[string]string, err error) {
 	for {
+		// Skipped tables can run to millions of lines without a row to return.
+		if d.lines%1000 == 0 {
+			if err := ctx.Err(); err != nil {
+				return "", nil, err
+			}
+		}
 		line, err := d.r.ReadBytes('\n')
 		if errors.Is(err, io.EOF) && len(line) > 0 {
 			err = nil
@@ -63,6 +71,7 @@ func (d *dump) next() (table string, row map[string]string, err error) {
 		if err != nil {
 			return "", nil, err
 		}
+		d.lines++
 		d.at.Offset += int64(len(line))
 		line = bytes.TrimSuffix(line, []byte("\n"))
 		if d.at.Table == "" {
