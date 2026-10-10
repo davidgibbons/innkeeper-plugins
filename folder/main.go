@@ -18,6 +18,7 @@ import (
 	"github.com/davidgibbons/innkeeper-plugins/internal/pluginio"
 	"github.com/davidgibbons/innkeeper/protocol"
 )
+
 const version = "0.1.0"
 
 var catalogConfig = catalogkit.Config{
@@ -29,7 +30,8 @@ var catalogConfig = catalogkit.Config{
 	},
 	Ingest: true,
 	Migrations: []catalogkit.Migration{{Name: "folder/1-file",
-		SQL: `CREATE TABLE file (path text PRIMARY KEY, mtime timestamptz NOT NULL, size bigint NOT NULL)`}},
+		SQL: `CREATE TABLE file (instance text NOT NULL, path text NOT NULL, mtime timestamptz NOT NULL,
+			size bigint NOT NULL, PRIMARY KEY (instance, path))`}},
 }
 
 // env is what initialize set up.
@@ -38,7 +40,6 @@ type env struct {
 	folder  string            // config.folder
 	blobTmp string
 }
-
 
 func main() {
 	// Set by initialize; requests run on other goroutines.
@@ -55,7 +56,7 @@ func main() {
 			e.folder, _ = p.Config["folder"].(string)
 			if p.DatabaseURL != "" {
 				var err error
-				if e.store, err = catalogkit.Open(ctx, p.DatabaseURL, catalogConfig); err != nil {
+				if e.store, err = catalogkit.Open(ctx, p.DatabaseURL, p.InstanceID, catalogConfig); err != nil {
 					return nil, err
 				}
 			}
@@ -158,7 +159,8 @@ func currentAvatar(ctx context.Context, e *env, id string) ([]byte, error) {
 	}
 	var mtime time.Time
 	var size int64
-	if err := e.store.Pool().QueryRow(ctx, `SELECT mtime, size FROM file WHERE path = $1`, id).Scan(&mtime, &size); err != nil {
+	if err := e.store.Pool().QueryRow(ctx, `SELECT mtime, size FROM file WHERE instance = $1 AND path = $2`,
+		e.store.Instance(), id).Scan(&mtime, &size); err != nil {
 		return nil, err
 	}
 	if !mtime.Equal(modTime(info)) || size != info.Size() {

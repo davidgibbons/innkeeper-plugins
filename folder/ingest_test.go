@@ -15,16 +15,24 @@ import (
 	"github.com/davidgibbons/innkeeper/protocol"
 )
 
+var t0 = time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+
 // testEnv is a folder holding a PNG card, a JSON card, a lorebook, and a
 // file that's neither, in subfolders.
 func testEnv(t *testing.T) *env {
+	t.Helper()
+	return testEnvAt(t, pgtest.URL(t), "test")
+}
+
+// testEnvAt is testEnv as instance on the schema at url.
+func testEnvAt(t *testing.T, url, instance string) *env {
 	t.Helper()
 	dir := t.TempDir()
 	copyFile(t, "../card/testdata/v2-seraphina.png", filepath.Join(dir, "fantasy/elves/seraphina.png"))
 	copyFile(t, "../card/testdata/v3-mirelle.json", filepath.Join(dir, "fantasy/mirelle.json"))
 	copyFile(t, "../card/testdata/eldoria.lorebook.json", filepath.Join(dir, "eldoria.json"))
 	writeFile(t, filepath.Join(dir, "notes.json"), `{"todo": true}`)
-	store, err := catalogkit.Open(context.Background(), pgtest.URL(t), catalogConfig)
+	store, err := catalogkit.Open(context.Background(), url, instance, catalogConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,5 +171,30 @@ func TestIngestNeedsAFolder(t *testing.T) {
 	var rpc *protocol.Error
 	if !errors.As(err, &rpc) || rpc.Code != protocol.CodeInvalidParams {
 		t.Fatalf("err = %v, want -32602", err)
+	}
+}
+
+// Two instances share the plugin's schema; one's ingest leaves the other's items alone.
+func TestIngestKeepsInstancesApart(t *testing.T) {
+	url := pgtest.URL(t)
+	a, b := testEnvAt(t, url, "a"), testEnvAt(t, url, "b")
+	// Same mtimes, so a file row shared between instances would pass b's files as unchanged.
+	for _, e := range []*env{a, b} {
+		err := filepath.WalkDir(e.folder, func(p string, _ os.DirEntry, err error) error {
+			return errors.Join(err, os.Chtimes(p, t0, t0))
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	runIngest(t, a, "")
+	if err := os.Remove(filepath.Join(b.folder, "eldoria.json")); err != nil {
+		t.Fatal(err)
+	}
+	if res, _ := runIngest(t, b, ""); res != (protocol.CatalogIngestResult{Added: 2, Skipped: 1}) {
+		t.Fatalf("second instance's ingest = %+v", res)
+	}
+	if got := ids(t, a, protocol.CatalogSearchParams{}); len(got) != 3 {
+		t.Fatalf("first instance lists %v", got)
 	}
 }

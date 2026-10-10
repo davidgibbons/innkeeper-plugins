@@ -21,7 +21,12 @@ var testConfig = Config{
 
 func openTest(t *testing.T) *Store {
 	t.Helper()
-	s, err := Open(context.Background(), pgtest.URL(t), testConfig)
+	return openInstance(t, pgtest.URL(t), "test")
+}
+
+func openInstance(t *testing.T, url, instance string) *Store {
+	t.Helper()
+	s, err := Open(context.Background(), url, instance, testConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,9 +44,16 @@ func TestOpenRefusesUnsupportedFilter(t *testing.T) {
 	cfg := testConfig
 	cfg.Filters = []Filter{{CatalogFilter: protocol.CatalogFilter{Name: "rating", Label: "Rating",
 		Type: protocol.FilterNumberRange}, Field: "attrs.rating"}}
-	_, err := Open(context.Background(), "postgres://unused", cfg)
+	_, err := Open(context.Background(), "postgres://unused", "test", cfg)
 	if err == nil || !strings.Contains(err.Error(), `filter "rating"`) {
 		t.Fatalf("err = %v, want the rating filter refused", err)
+	}
+}
+
+func TestOpenRefusesEmptyInstance(t *testing.T) {
+	_, err := Open(context.Background(), "postgres://unused", "", testConfig)
+	if err == nil || !strings.Contains(err.Error(), "instance") {
+		t.Fatalf("err = %v, want the empty instance refused", err)
 	}
 }
 
@@ -52,13 +64,13 @@ func TestOpenMigratesOnce(t *testing.T) {
 	cfg := testConfig
 	cfg.Migrations = []Migration{{Name: "test/1", SQL: "CREATE TABLE extra (x int)"}}
 	for range 2 {
-		s, err := Open(ctx, url, cfg)
+		s, err := Open(ctx, url, "test", cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
 		s.Close()
 	}
-	s, err := Open(ctx, url, cfg)
+	s, err := Open(ctx, url, "test", cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

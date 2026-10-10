@@ -67,14 +67,14 @@ func (s *Store) Put(ctx context.Context, e Entry) (Change, error) {
 	defer tx.Rollback(ctx)
 
 	// FOR UPDATE locks nothing when the row is missing, so two new puts of one id would both insert version 1.
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('catalogkit-item:' || $1))`, e.ID); err != nil {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('catalogkit-item:' || $1 || '/' || $2))`, s.instance, e.ID); err != nil {
 		return 0, err
 	}
 
 	var hash string
 	var latest int
 	var removed bool
-	err = tx.QueryRow(ctx, `SELECT data_hash, latest, removed FROM item WHERE id = $1 FOR UPDATE`, e.ID).
+	err = tx.QueryRow(ctx, `SELECT data_hash, latest, removed FROM item WHERE instance = $1 AND id = $2 FOR UPDATE`, s.instance, e.ID).
 		Scan(&hash, &latest, &removed)
 	change, newVersion := Unchanged, true
 	switch {
@@ -92,23 +92,23 @@ func (s *Store) Put(ctx context.Context, e Entry) (Change, error) {
 	}
 	version := strconv.Itoa(latest)
 	_, err = tx.Exec(ctx, `
-		INSERT INTO item (id, kind, name, author, tags, summary, description, attrs, updated, latest,
+		INSERT INTO item (instance, id, kind, name, author, tags, summary, description, attrs, updated, latest,
 			latest_version, content_hash, data_hash, text_simhash, image_phash, lsh, thumbnail)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-		ON CONFLICT (id) DO UPDATE SET kind = excluded.kind, name = excluded.name, author = excluded.author,
+		VALUES ($18, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		ON CONFLICT (instance, id) DO UPDATE SET kind = excluded.kind, name = excluded.name, author = excluded.author,
 			tags = excluded.tags, summary = excluded.summary, description = excluded.description,
 			attrs = excluded.attrs, updated = excluded.updated, latest = excluded.latest,
 			latest_version = excluded.latest_version, content_hash = excluded.content_hash, data_hash = excluded.data_hash,
 			text_simhash = excluded.text_simhash, image_phash = excluded.image_phash, lsh = excluded.lsh,
 			thumbnail = excluded.thumbnail, removed = false`,
 		e.ID, e.Kind, d.name, d.author, d.tags, d.summary, d.description, string(attrs), e.Updated, latest,
-		version, d.contentHash, d.dataHash, d.simhash, d.phash, lsh(d.simhash, d.phash), d.thumbnail)
+		version, d.contentHash, d.dataHash, d.simhash, d.phash, lsh(d.simhash, d.phash), d.thumbnail, s.instance)
 	if err != nil {
 		return 0, badData(e.ID, err)
 	}
 	if newVersion {
-		_, err = tx.Exec(ctx, `INSERT INTO item_version (item_id, seq, version, created, data) VALUES ($1, $2, $3, $4, $5)`,
-			e.ID, latest, version, e.Updated, string(e.Data))
+		_, err = tx.Exec(ctx, `INSERT INTO item_version (instance, item_id, seq, version, created, data) VALUES ($1, $2, $3, $4, $5, $6)`,
+			s.instance, e.ID, latest, version, e.Updated, string(e.Data))
 		if err != nil {
 			return 0, badData(e.ID, err)
 		}
@@ -133,7 +133,7 @@ func (s *Store) MarkRemovedExcept(ctx context.Context, keep []string) (int64, er
 	if keep == nil {
 		keep = []string{} // NULL would match nothing
 	}
-	tag, err := s.pool.Exec(ctx, `UPDATE item SET removed = true WHERE NOT removed AND id <> ALL($1)`, keep)
+	tag, err := s.pool.Exec(ctx, `UPDATE item SET removed = true WHERE instance = $1 AND NOT removed AND id <> ALL($2)`, s.instance, keep)
 	return tag.RowsAffected(), err
 }
 

@@ -35,14 +35,14 @@ func notFound(format string, args ...any) error {
 // Removed items still answer.
 func (s *Store) Get(ctx context.Context, id, version string) (protocol.CatalogGetResult, error) {
 	var res protocol.CatalogGetResult
-	err := s.pool.QueryRow(ctx, `SELECT `+itemColumns+` FROM item WHERE id = $1`, id).Scan(itemDest(&res.Item)...)
+	err := s.pool.QueryRow(ctx, `SELECT `+itemColumns+` FROM item WHERE instance = $1 AND id = $2`, s.instance, id).Scan(itemDest(&res.Item)...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return res, notFound("no item %q", id)
 	}
 	if err != nil {
 		return res, err
 	}
-	rows, _ := s.pool.Query(ctx, `SELECT version, created FROM item_version WHERE item_id = $1 ORDER BY seq DESC`, id)
+	rows, _ := s.pool.Query(ctx, `SELECT version, created FROM item_version WHERE instance = $1 AND item_id = $2 ORDER BY seq DESC`, s.instance, id)
 	res.Versions, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (protocol.CatalogVersion, error) {
 		var v protocol.CatalogVersion
 		var created *time.Time
@@ -57,7 +57,7 @@ func (s *Store) Get(ctx context.Context, id, version string) (protocol.CatalogGe
 	}
 	res.Version = cmp.Or(version, res.Item.LatestVersion)
 	var data string
-	err = s.pool.QueryRow(ctx, `SELECT data FROM item_version WHERE item_id = $1 AND version = $2`, id, res.Version).Scan(&data)
+	err = s.pool.QueryRow(ctx, `SELECT data FROM item_version WHERE instance = $1 AND item_id = $2 AND version = $3`, s.instance, id, res.Version).Scan(&data)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return res, notFound("item %q has no version %q", id, res.Version)
 	}
@@ -95,6 +95,7 @@ func (s *Store) Search(ctx context.Context, p protocol.CatalogSearchParams) (pro
 		return res, invalid(err)
 	}
 	b := &query{}
+	b.where("instance = " + b.arg(s.instance))
 	b.where("NOT removed")
 	text := strings.TrimSpace(p.Q)
 	var tsq string
@@ -205,12 +206,12 @@ func (s *Store) Similar(ctx context.Context, p protocol.CatalogSimilarParams) (p
 				bit_count((text_simhash # $3)::bit(64)),
 				bit_count((image_phash # $4)::bit(64))) AS distance
 			FROM item
-			WHERE kind = $1 AND NOT removed AND (content_hash = $2 OR lsh && $5::int4[])) m
+			WHERE instance = $8 AND kind = $1 AND NOT removed AND (content_hash = $2 OR lsh && $5::int4[])) m
 		WHERE distance <= $6
 		ORDER BY distance, id
 		LIMIT $7`,
 		p.Kind, p.Hashes.ContentHash, p.Hashes.TextSimhash, p.Hashes.ImagePhash,
-		lsh(p.Hashes.TextSimhash, p.Hashes.ImagePhash), p.MaxDistance, p.Limit)
+		lsh(p.Hashes.TextSimhash, p.Hashes.ImagePhash), p.MaxDistance, p.Limit, s.instance)
 	items, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (protocol.CatalogItem, error) {
 		var it protocol.CatalogItem
 		err := r.Scan(itemDest(&it)...)

@@ -87,7 +87,7 @@ func ingest(ctx context.Context, e *env, notify func(string, any) error, raw jso
 		return res, err
 	}
 	// A file that comes back unchanged must be read again to restore its item.
-	_, err = e.store.Pool().Exec(ctx, `DELETE FROM file WHERE path <> ALL($1)`, files)
+	_, err = e.store.Pool().Exec(ctx, `DELETE FROM file WHERE instance = $1 AND path <> ALL($2)`, e.store.Instance(), files)
 	return res, err
 }
 
@@ -126,7 +126,8 @@ func ingestFile(ctx context.Context, store *catalogkit.Store, root *os.Root, nam
 	mtime := modTime(info)
 	var oldTime time.Time
 	var oldSize int64
-	err = store.Pool().QueryRow(ctx, `SELECT mtime, size FROM file WHERE path = $1`, name).Scan(&oldTime, &oldSize)
+	err = store.Pool().QueryRow(ctx, `SELECT mtime, size FROM file WHERE instance = $1 AND path = $2`,
+		store.Instance(), name).Scan(&oldTime, &oldSize)
 	if err == nil && oldTime.Equal(mtime) && oldSize == info.Size() {
 		return catalogkit.Unchanged, nil, nil
 	}
@@ -157,8 +158,9 @@ func ingestFile(ctx context.Context, store *catalogkit.Store, root *os.Root, nam
 			return 0, nil, err
 		}
 	}
-	_, err = store.Pool().Exec(ctx, `INSERT INTO file (path, mtime, size) VALUES ($1, $2, $3)
-		ON CONFLICT (path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size`, name, mtime, info.Size())
+	_, err = store.Pool().Exec(ctx, `INSERT INTO file (instance, path, mtime, size) VALUES ($1, $2, $3, $4)
+		ON CONFLICT (instance, path) DO UPDATE SET mtime = excluded.mtime, size = excluded.size`,
+		store.Instance(), name, mtime, info.Size())
 	return change, skip, err
 }
 

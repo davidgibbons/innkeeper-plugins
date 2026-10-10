@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/davidgibbons/innkeeper-plugins/internal/pgtest"
 	"github.com/davidgibbons/innkeeper/cardhash"
 	"github.com/davidgibbons/innkeeper/protocol"
 )
@@ -186,4 +187,38 @@ func TestSimilar(t *testing.T) {
 	wantCode(t, err, protocol.CodeInvalidParams)
 	_, err = s.Similar(ctx, protocol.CatalogSimilarParams{Kind: "preset", Limit: 10})
 	wantCode(t, err, protocol.CodeInvalidParams)
+}
+
+// Instances share the plugin's schema but not its items.
+func TestInstancesKeepApart(t *testing.T) {
+	ctx := context.Background()
+	url := pgtest.URL(t)
+	a, b := openInstance(t, url, "a"), openInstance(t, url, "b")
+	for s, name := range map[*Store]string{a: "Ann", b: "Bob"} {
+		c, err := s.Put(ctx, Entry{ID: "x", Kind: protocol.KindCard, Data: testCard(name, name+" text."), Updated: t0})
+		if err != nil || c != Added {
+			t.Fatalf("%s: change = %v, err %v; want Added", name, c, err)
+		}
+	}
+	for s, name := range map[*Store]string{a: "Ann", b: "Bob"} {
+		res, err := s.Search(ctx, protocol.CatalogSearchParams{})
+		if err != nil || len(res.Items) != 1 || res.Items[0].Name != name {
+			t.Fatalf("%s: search = %+v, err %v", name, res.Items, err)
+		}
+		got, err := s.Get(ctx, "x", "")
+		if err != nil || got.Item.Name != name || len(got.Versions) != 1 {
+			t.Fatalf("%s: get = %q with %d versions, err %v", name, got.Item.Name, len(got.Versions), err)
+		}
+		sim, err := s.Similar(ctx, protocol.CatalogSimilarParams{Kind: protocol.KindCard,
+			Hashes: protocol.CatalogHashes{ContentHash: got.Item.Hashes.ContentHash}, Limit: 10})
+		if err != nil || len(sim.Items) != 1 || sim.Items[0].Name != name {
+			t.Fatalf("%s: similar = %+v, err %v", name, sim.Items, err)
+		}
+	}
+	if n, err := a.MarkRemovedExcept(ctx, nil); err != nil || n != 1 {
+		t.Fatalf("marked %d, err %v; want 1", n, err)
+	}
+	if got := searchIDs(t, b, protocol.CatalogSearchParams{}); !slices.Equal(got, []string{"x"}) {
+		t.Fatalf("b lists %v after a's sweep", got)
+	}
 }

@@ -73,13 +73,18 @@ func Describe(cfg Config) protocol.CatalogInfo {
 
 // Store is an open catalog index.
 type Store struct {
-	pool *pgxpool.Pool
-	cfg  Config
+	pool     *pgxpool.Pool
+	cfg      Config
+	instance string
 }
 
-// Open checks cfg, connects to the plugin's database, and migrates it.
-func Open(ctx context.Context, dsn string, cfg Config) (*Store, error) {
+// Open checks cfg, connects to the plugin's database, and migrates it. The
+// plugin's instances share its schema, so every row belongs to an instance.
+func Open(ctx context.Context, dsn, instance string, cfg Config) (*Store, error) {
 	errs := []error{Describe(cfg).Validate()}
+	if instance == "" {
+		errs = append(errs, errors.New("catalogkit: instance is empty"))
+	}
 	for _, f := range cfg.Filters {
 		errs = append(errs, f.check())
 	}
@@ -94,11 +99,15 @@ func Open(ctx context.Context, dsn string, cfg Config) (*Store, error) {
 		pool.Close()
 		return nil, err
 	}
-	return &Store{pool: pool, cfg: cfg}, nil
+	return &Store{pool: pool, cfg: cfg, instance: instance}, nil
 }
 
 // Close closes the database connections.
 func (s *Store) Close() { s.pool.Close() }
+
+// Instance is the plugin instance this store's rows belong to, for the
+// plugin's own tables.
+func (s *Store) Instance() string { return s.instance }
 
 // Pool is the database, for the plugin's own tables.
 func (s *Store) Pool() *pgxpool.Pool { return s.pool }
@@ -138,7 +147,8 @@ CREATE FUNCTION tags_text(text[]) RETURNS text
 	LANGUAGE sql IMMUTABLE PARALLEL SAFE RETURN array_to_string($1, ' ');
 
 CREATE TABLE item (
-	id text PRIMARY KEY,
+	instance text NOT NULL,
+	id text NOT NULL,
 	kind text NOT NULL,
 	name text NOT NULL,
 	author text NOT NULL DEFAULT '',
@@ -160,24 +170,27 @@ CREATE TABLE item (
 	search tsvector GENERATED ALWAYS AS (
 		setweight(to_tsvector('english', name), 'A') ||
 		setweight(to_tsvector('english', author || ' ' || tags_text(tags)), 'B') ||
-		setweight(to_tsvector('english', summary || ' ' || description), 'C')) STORED
+		setweight(to_tsvector('english', summary || ' ' || description), 'C')) STORED,
+	PRIMARY KEY (instance, id)
 );
 CREATE INDEX item_search ON item USING gin (search);
 CREATE INDEX item_tags ON item USING gin (tags);
 CREATE INDEX item_attrs ON item USING gin (attrs jsonb_path_ops);
 CREATE INDEX item_lsh ON item USING gin (lsh);
-CREATE INDEX item_content_hash ON item (content_hash);
-CREATE INDEX item_name ON item (lower(name), id);
-CREATE INDEX item_updated ON item (updated, id);
+CREATE INDEX item_content_hash ON item (instance, content_hash);
+CREATE INDEX item_name ON item (instance, lower(name), id);
+CREATE INDEX item_updated ON item (instance, updated, id);
 
 -- data is json, not jsonb, so get returns the bytes content_hash was taken from.
 CREATE TABLE item_version (
-	item_id text NOT NULL REFERENCES item ON DELETE CASCADE,
+	instance text NOT NULL,
+	item_id text NOT NULL,
 	seq integer NOT NULL,
 	version text NOT NULL,
 	created timestamptz,
 	data json NOT NULL,
-	PRIMARY KEY (item_id, seq),
-	UNIQUE (item_id, version)
+	PRIMARY KEY (instance, item_id, seq),
+	UNIQUE (instance, item_id, version),
+	FOREIGN KEY (instance, item_id) REFERENCES item (instance, id) ON DELETE CASCADE
 );
 `}}
