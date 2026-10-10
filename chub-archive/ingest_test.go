@@ -78,7 +78,11 @@ func TestIngest(t *testing.T) {
 	}
 	var last checkpoint
 	_ = json.Unmarshal([]byte(cps[len(cps)-1]), &last)
-	if last.Table != "" || last.Offset == 0 {
+	info, err := os.Stat("testdata/dump.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if last.Table != "" || last.Offset != info.Size() {
 		t.Fatalf("last checkpoint = %+v, want the end of the dump", last)
 	}
 
