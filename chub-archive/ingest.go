@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
 	"io"
 	"io/fs"
 	"log"
 	"os"
 	"strconv"
+	"sync"
 	"syscall"
 
 	"github.com/davidgibbons/innkeeper-plugins/catalogkit"
@@ -22,13 +24,27 @@ import (
 // set it to 1.
 var checkpointEvery = 1000
 
+// imageReaders is how many versions' images ingest reads and decodes ahead
+// of the row it is storing, since each read waits on the archive's share.
+const imageReaders = 16
+
+// pending is a row read from the dump, with its image once done is closed.
+type pending struct {
+	table  string
+	row    map[string]string
+	at     checkpoint // where the dump is after this row
+	err    error      // from reading the row
+	img    image.Image
+	imgErr error // fails the run
+	done   chan struct{}
+}
+
 func invalid(err error) error {
 	return protocol.NewError(protocol.CodeInvalidParams, err.Error(), false)
 }
 
 // ingest answers catalog.ingest: it reads the dump from the checkpoint to
 // the end and stores each card and lorebook version.
-// ponytail: one row at a time; decode images in parallel if a full ingest is too slow.
 func ingest(ctx context.Context, e *env, notify func(string, any) error, raw json.RawMessage) (protocol.CatalogIngestResult, error) {
 	var res protocol.CatalogIngestResult
 	var p protocol.CatalogIngestParams
@@ -54,29 +70,66 @@ func ingest(ctx context.Context, e *env, notify func(string, any) error, raw jso
 		return res, invalid(fmt.Errorf("config dump: %w", err))
 	}
 	defer d.Close()
-	report := func() error {
-		if err := notify(protocol.NotifyProgress, protocol.Progress{Run: p.Run, Done: d.at.Offset, Total: d.at.Size}); err != nil {
+	report := func(at checkpoint) error {
+		if err := notify(protocol.NotifyProgress, protocol.Progress{Run: p.Run, Done: at.Offset, Total: at.Size}); err != nil {
 			return err
 		}
-		cp, _ := json.Marshal(d.at)
+		cp, _ := json.Marshal(at)
 		return notify(protocol.NotifyCheckpoint, protocol.Checkpoint{Run: p.Run, Checkpoint: cp})
 	}
-	for n := 1; ; n++ {
+	// One goroutine reads the dump and starts each version's image read, and
+	// this one stores rows in dump order, so a checkpoint never passes a row
+	// still in flight.
+	ctx, cancel := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	defer func() { cancel(); wg.Wait() }()
+	rows := make(chan *pending, imageReaders)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer close(rows)
+		for {
+			table, row, err := d.next(ctx)
+			if errors.Is(err, io.EOF) {
+				return
+			}
+			r := &pending{table: table, row: row, at: d.at, err: err, done: make(chan struct{})}
+			if _, parent := parents[table]; err == nil && !parent {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					defer close(r.done)
+					r.img, r.imgErr = loadImage(ctx, e, table, row)
+				}()
+			} else {
+				close(r.done)
+			}
+			select {
+			case rows <- r:
+			case <-ctx.Done():
+				return
+			}
+			if err != nil && !errors.Is(err, errBadRow) {
+				return
+			}
+		}
+	}()
+	n := 0
+	for r := range rows {
 		if err := ctx.Err(); err != nil {
 			return res, err
 		}
-		table, row, err := d.next(ctx)
-		if errors.Is(err, io.EOF) {
-			break
-		}
+		<-r.done
+		n++
+		err := r.err
 		if err == nil {
-			err = ingestRow(ctx, e, table, row, &res)
+			err = ingestRow(ctx, e, r, &res)
 		}
 		var rpc *protocol.Error
 		switch {
 		case errors.Is(err, errBadRow) || errors.Is(err, catalogkit.ErrBadData):
 			res.Skipped++
-			log.Printf("skipped %s %s increment %s, ending at byte %d: %v", table, row[idColumn(table)], row["increment"], d.at.Offset, err)
+			log.Printf("skipped %s %s increment %s, ending at byte %d: %v", r.table, r.row[idColumn(r.table)], r.row["increment"], r.at.Offset, err)
 		case err == nil:
 		case ctx.Err() != nil || errors.As(err, &rpc):
 			return res, err
@@ -85,12 +138,16 @@ func ingest(ctx context.Context, e *env, notify func(string, any) error, raw jso
 			return res, protocol.NewError(protocol.CodeInternalError, err.Error(), true)
 		}
 		if n%checkpointEvery == 0 {
-			if err := report(); err != nil {
+			if err := report(r.at); err != nil {
 				return res, err
 			}
 		}
 	}
-	return res, report()
+	if err := ctx.Err(); err != nil {
+		return res, err
+	}
+	// The reader is done, so d.at is where the dump ended.
+	return res, report(d.at)
 }
 
 // idColumn names the column holding a row's item ID.
@@ -103,36 +160,23 @@ func idColumn(table string) string {
 
 // ingestRow stores one row: a chub per-item row for later versions to read,
 // or a version.
-func ingestRow(ctx context.Context, e *env, table string, row map[string]string, res *protocol.CatalogIngestResult) error {
-	if _, ok := parents[table]; ok {
-		return putParent(ctx, e.store, table, row)
+func ingestRow(ctx context.Context, e *env, r *pending, res *protocol.CatalogIngestResult) error {
+	if _, ok := parents[r.table]; ok {
+		return putParent(ctx, e.store, r.table, r.row)
 	}
-	en, err := entry(ctx, e.store, table, row)
+	en, err := entry(ctx, e.store, r.table, r.row)
 	if err != nil {
 		return err
 	}
 	version := strconv.Itoa(en.Version)
-	pool, instance := e.store.Pool(), e.store.Instance()
-	// ponytail: a version already ingested is skipped whole, so a newer dump's rating and tag changes don't reach it; drop this check to refresh them, at the cost of reading every image again.
-	var seen bool
-	err = pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM source_row WHERE instance = $1 AND item_id = $2 AND version = $3)`,
-		instance, en.ID, version).Scan(&seen)
-	if err != nil || seen {
+	// Checked again here, in dump order, in case the dump repeats a version.
+	if seen, err := stored(ctx, e.store, en.ID, version); err != nil || seen {
 		return err
 	}
-	hash := row["image_hash"]
-	b, err := readImage(e.images, hash)
-	// These fail on every read, so the version is stored without its image.
-	// Other read errors may pass, so the run fails and retries.
-	if err != nil && !errors.Is(err, fs.ErrPermission) && !errors.Is(err, syscall.EISDIR) && !errors.Is(err, pluginio.ErrTooLarge) {
-		return err
+	if r.imgErr != nil {
+		return r.imgErr
 	}
-	if err == nil && b != nil {
-		en.Image, err = cardhash.DecodeImageBytes(b)
-	}
-	if err != nil {
-		log.Printf("%s version %s: image %s: %v", en.ID, version, hash, err)
-	}
+	en.Image = r.img
 	change, err := e.store.Put(ctx, en)
 	if err != nil {
 		return err
@@ -143,7 +187,47 @@ func ingestRow(ctx context.Context, e *env, table string, row map[string]string,
 	case catalogkit.Updated:
 		res.Updated++
 	}
-	_, err = pool.Exec(ctx, `INSERT INTO source_row (instance, item_id, version, image_hash) VALUES ($1, $2, $3, $4)
-		ON CONFLICT DO NOTHING`, instance, en.ID, version, hash)
+	_, err = e.store.Pool().Exec(ctx, `INSERT INTO source_row (instance, item_id, version, image_hash) VALUES ($1, $2, $3, $4)
+		ON CONFLICT DO NOTHING`, e.store.Instance(), en.ID, version, r.row["image_hash"])
 	return err
+}
+
+// stored reports whether a version is already ingested.
+// ponytail: a version already ingested is skipped whole, so a newer dump's rating and tag changes don't reach it; drop this check to refresh them, at the cost of reading every image again.
+func stored(ctx context.Context, s *catalogkit.Store, id, version string) (bool, error) {
+	var seen bool
+	err := s.Pool().QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM source_row WHERE instance = $1 AND item_id = $2 AND version = $3)`,
+		s.Instance(), id, version).Scan(&seen)
+	return seen, err
+}
+
+// loadImage reads and decodes a version row's image, or returns nil for a
+// version already stored. An image that can never be read is logged and left
+// out; any other read error is returned, to fail the run for the core to retry.
+func loadImage(ctx context.Context, e *env, table string, row map[string]string) (image.Image, error) {
+	id, inc := table+":"+row[sources[table].idCol], row["increment"]
+	if inc == "" {
+		inc = "1"
+	}
+	v, err := strconv.Atoi(inc)
+	if err != nil {
+		return nil, nil
+	}
+	version := strconv.Itoa(v)
+	if seen, err := stored(ctx, e.store, id, version); err != nil || seen {
+		return nil, err
+	}
+	hash := row["image_hash"]
+	b, err := readImage(e.images, hash)
+	if err != nil && !errors.Is(err, fs.ErrPermission) && !errors.Is(err, syscall.EISDIR) && !errors.Is(err, pluginio.ErrTooLarge) {
+		return nil, err
+	}
+	var img image.Image
+	if err == nil && b != nil {
+		img, err = cardhash.DecodeImageBytes(b)
+	}
+	if err != nil {
+		log.Printf("%s version %s: image %s: %v", id, version, hash, err)
+	}
+	return img, nil
 }
