@@ -7,6 +7,7 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	"slices"
 	"testing"
 	"time"
 
@@ -175,5 +176,36 @@ func TestPutRefusesDataPostgresRejects(t *testing.T) {
 				t.Fatalf("err = %v, want ErrBadData", err)
 			}
 		})
+	}
+}
+
+func TestPutOverrides(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	early := t0.Add(-24 * time.Hour)
+	put(t, s, Entry{ID: "o", Kind: protocol.KindCard, Data: testCard("Ann", "One."), Updated: t0,
+		Author: " Zed ", Tags: []string{"Sci-Fi", " "}, Added: t0})
+	// A later put with an earlier Added moves the date back; a zero Added keeps it.
+	put(t, s, Entry{ID: "o", Kind: protocol.KindCard, Data: testCard("Ann", "One."), Updated: t0, Added: early})
+	put(t, s, Entry{ID: "o", Kind: protocol.KindCard, Data: testCard("Ann", "One."), Updated: t0})
+
+	var author string
+	var tags []string
+	var added time.Time
+	if err := s.pool.QueryRow(ctx, `SELECT author, tags, added FROM item WHERE id = 'o'`).Scan(&author, &tags, &added); err != nil {
+		t.Fatal(err)
+	}
+	// The last put had no overrides, so the card's own creator and tags are back.
+	if author != "ann" || !slices.Equal(tags, []string{"fantasy", "elf"}) || !added.Equal(early) {
+		t.Fatalf("author %q, tags %v, added %v", author, tags, added)
+	}
+
+	put(t, s, Entry{ID: "p", Kind: protocol.KindCard, Data: testCard("Bo", "Two."), Updated: t0,
+		Author: " Zed ", Tags: []string{"Sci-Fi", " "}})
+	if err := s.pool.QueryRow(ctx, `SELECT author, tags FROM item WHERE id = 'p'`).Scan(&author, &tags); err != nil {
+		t.Fatal(err)
+	}
+	if author != "Zed" || !slices.Equal(tags, []string{"sci-fi"}) {
+		t.Fatalf("author %q, tags %v", author, tags)
 	}
 }

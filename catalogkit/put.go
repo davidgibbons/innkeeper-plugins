@@ -35,6 +35,12 @@ type Entry struct {
 	Attrs map[string][]string
 	// Numbers are the values nums.<key> filters match.
 	Numbers map[string]float64
+	// Author and Tags, when not empty, replace the creator and tags in Data.
+	Author string
+	Tags   []string
+	// Added is when the source first listed the item, or zero for the time
+	// of the first Put. The item keeps the earliest Added it is given.
+	Added time.Time
 	// Updated is when the source last changed. It dates a new version.
 	Updated time.Time
 }
@@ -100,18 +106,23 @@ func (s *Store) Put(ctx context.Context, e Entry) (Change, error) {
 		}
 	}
 	version := strconv.Itoa(latest)
+	var added *time.Time // NULL keeps the stored date
+	if !e.Added.IsZero() {
+		added = &e.Added
+	}
 	_, err = tx.Exec(ctx, `
 		INSERT INTO item (instance, id, kind, name, author, tags, summary, description, attrs, updated, latest,
-			latest_version, content_hash, data_hash, text_simhash, image_phash, lsh, thumbnail, nums)
-		VALUES ($18, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $19)
+			latest_version, content_hash, data_hash, text_simhash, image_phash, lsh, thumbnail, nums, added)
+		VALUES ($18, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $19,
+			COALESCE($20::timestamptz, now()))
 		ON CONFLICT (instance, id) DO UPDATE SET kind = excluded.kind, name = excluded.name, author = excluded.author,
 			tags = excluded.tags, summary = excluded.summary, description = excluded.description,
 			attrs = excluded.attrs, updated = excluded.updated, latest = excluded.latest,
 			latest_version = excluded.latest_version, content_hash = excluded.content_hash, data_hash = excluded.data_hash,
 			text_simhash = excluded.text_simhash, image_phash = excluded.image_phash, lsh = excluded.lsh,
-			thumbnail = excluded.thumbnail, nums = excluded.nums, removed = false`,
+			thumbnail = excluded.thumbnail, nums = excluded.nums, added = LEAST(item.added, $20), removed = false`,
 		e.ID, e.Kind, d.name, d.author, d.tags, d.summary, d.description, string(attrs), e.Updated, latest,
-		version, d.contentHash, d.dataHash, d.simhash, d.phash, lsh(d.simhash, d.phash), d.thumbnail, s.instance, string(nums))
+		version, d.contentHash, d.dataHash, d.simhash, d.phash, lsh(d.simhash, d.phash), d.thumbnail, s.instance, string(nums), added)
 	if err != nil {
 		return 0, badData(e.ID, err)
 	}
@@ -196,11 +207,23 @@ func derive(e Entry) (derived, error) {
 	str := func(k string) string { s, _ := m[k].(string); return strings.TrimSpace(s) }
 	d.name, d.author, d.description = cmp.Or(str("name"), e.ID), str("creator"), str("description")
 	d.summary = truncate(cmp.Or(str("creator_notes"), d.description), 300)
-	tags, _ := m["tags"].([]any)
-	for _, t := range tags {
-		if s, _ := t.(string); strings.TrimSpace(s) != "" {
-			d.tags = append(d.tags, strings.ToLower(strings.TrimSpace(s)))
+	var tags []string
+	raw, _ := m["tags"].([]any)
+	for _, t := range raw {
+		if s, ok := t.(string); ok {
+			tags = append(tags, s)
 		}
+	}
+	if len(e.Tags) > 0 {
+		tags = e.Tags
+	}
+	for _, t := range tags {
+		if t = strings.TrimSpace(t); t != "" {
+			d.tags = append(d.tags, strings.ToLower(t))
+		}
+	}
+	if a := strings.TrimSpace(e.Author); a != "" {
+		d.author = a
 	}
 	if e.Image != nil {
 		p := cardhash.Phash(e.Image)
