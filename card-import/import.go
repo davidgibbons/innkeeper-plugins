@@ -160,7 +160,7 @@ func (im *importer) importFolder(ctx context.Context, dir, last string) error {
 			return err
 		}
 		name := files[i]
-		b, err := readIn(root, name)
+		b, err := pluginio.ReadIn(root, name)
 		if err == nil {
 			if err = im.emit(name, name, b); err != nil && !errors.Is(err, card.ErrNotCard) {
 				return err
@@ -185,16 +185,6 @@ func (im *importer) importFolder(ctx context.Context, dir, last string) error {
 		}
 	}
 	return nil
-}
-
-// readIn reads one file inside root.
-func readIn(root *os.Root, name string) ([]byte, error) {
-	f, err := root.Open(name)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	return pluginio.ReadAll(f)
 }
 
 // emit decodes one file and sends the card or lorebook it holds. A file that
