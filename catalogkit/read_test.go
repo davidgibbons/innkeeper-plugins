@@ -138,3 +138,52 @@ func TestSearchSkipsRemoved(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+// setSimhash overwrites an item's simhash and its bands, to test distances
+// exactly.
+func setSimhash(t *testing.T, s *Store, id string, h int64) {
+	t.Helper()
+	_, err := s.pool.Exec(context.Background(), `UPDATE item SET text_simhash = $2, image_phash = NULL, lsh = $3 WHERE id = $1`,
+		id, h, lsh(&h, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSimilar(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	h := int64(0x0123456789abcdef)
+	near := h
+	for b := range MaxDistance {
+		near ^= 1 << (7 * b)
+	}
+	for id, sim := range map[string]int64{"same": h, "near": near, "far": near ^ 1<<(7*MaxDistance)} {
+		put(t, s, Entry{ID: id, Kind: protocol.KindCard, Data: testCard(id, "Text for "+id+"."), Updated: t0})
+		setSimhash(t, s, id, sim)
+	}
+	exact, err := s.Get(ctx, "far", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := s.Similar(ctx, protocol.CatalogSimilarParams{Kind: protocol.KindCard,
+		Hashes:      protocol.CatalogHashes{ContentHash: exact.Item.Hashes.ContentHash, TextSimhash: &h},
+		MaxDistance: MaxDistance, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, it := range res.Items {
+		ids = append(ids, it.ID)
+	}
+	// far matches on content_hash at distance 0; same is 0 bits away, near 8.
+	if want := []string{"far", "same", "near"}; !slices.Equal(ids, want) {
+		t.Fatalf("got %v, want %v", ids, want)
+	}
+
+	_, err = s.Similar(ctx, protocol.CatalogSimilarParams{Kind: protocol.KindCard, MaxDistance: MaxDistance + 1, Limit: 10})
+	wantCode(t, err, protocol.CodeInvalidParams)
+	_, err = s.Similar(ctx, protocol.CatalogSimilarParams{Kind: "preset", Limit: 10})
+	wantCode(t, err, protocol.CodeInvalidParams)
+}

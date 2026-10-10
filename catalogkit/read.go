@@ -184,3 +184,41 @@ func (s *Store) filter(b *query, name string, raw json.RawMessage) {
 		}
 	}
 }
+
+// Similar answers catalog.similar: items of the kind with the same
+// content_hash, or within MaxDistance bits by simhash or phash, closest first.
+func (s *Store) Similar(ctx context.Context, p protocol.CatalogSimilarParams) (protocol.CatalogSimilarResult, error) {
+	res := protocol.CatalogSimilarResult{Items: []protocol.CatalogItem{}}
+	switch {
+	case !slices.Contains(s.cfg.Kinds, p.Kind):
+		return res, invalid(fmt.Errorf("kind %q is not declared", p.Kind))
+	case p.Limit < 1 || p.Limit > protocol.MaxCatalogPage:
+		return res, invalid(fmt.Errorf("limit %d must be 1 to %d", p.Limit, protocol.MaxCatalogPage))
+	case p.MaxDistance < 0 || p.MaxDistance > MaxDistance:
+		return res, invalid(fmt.Errorf("max_distance %d must be 0 to %d", p.MaxDistance, MaxDistance))
+	}
+	// least() skips the NULL a missing hash gives.
+	rows, _ := s.pool.Query(ctx, `
+		SELECT `+itemColumns+` FROM (
+			SELECT *, least(
+				CASE WHEN content_hash = $2 THEN 0 END,
+				bit_count((text_simhash # $3)::bit(64)),
+				bit_count((image_phash # $4)::bit(64))) AS distance
+			FROM item
+			WHERE kind = $1 AND NOT removed AND (content_hash = $2 OR lsh && $5::int4[])) m
+		WHERE distance <= $6
+		ORDER BY distance, id
+		LIMIT $7`,
+		p.Kind, p.Hashes.ContentHash, p.Hashes.TextSimhash, p.Hashes.ImagePhash,
+		lsh(p.Hashes.TextSimhash, p.Hashes.ImagePhash), p.MaxDistance, p.Limit)
+	items, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (protocol.CatalogItem, error) {
+		var it protocol.CatalogItem
+		err := r.Scan(itemDest(&it)...)
+		return it, err
+	})
+	if err != nil {
+		return res, err
+	}
+	res.Items = append(res.Items, items...)
+	return res, nil
+}
