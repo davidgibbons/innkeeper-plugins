@@ -130,6 +130,10 @@ func TestIngest(t *testing.T) {
 		t.Fatal(err)
 	}
 	eldoria, _ := os.ReadFile(filepath.Join(e.folder, "eldoria.json"))
+	eldoriaInfo, err := os.Stat(filepath.Join(e.folder, "eldoria.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Remove(filepath.Join(e.folder, "eldoria.json")); err != nil {
 		t.Fatal(err)
 	}
@@ -147,8 +151,11 @@ func TestIngest(t *testing.T) {
 		t.Fatalf("get of a removed item: %v", err)
 	}
 
-	// The same file coming back returns the item.
+	// The same file coming back, mtime and all, returns the item.
 	writeFile(t, filepath.Join(e.folder, "eldoria.json"), string(eldoria))
+	if err := os.Chtimes(filepath.Join(e.folder, "eldoria.json"), eldoriaInfo.ModTime(), eldoriaInfo.ModTime()); err != nil {
+		t.Fatal(err)
+	}
 	if res, _ := runIngest(t, e, ""); res != (protocol.CatalogIngestResult{Updated: 1}) {
 		t.Fatalf("after restoring the lorebook = %+v", res)
 	}
