@@ -60,14 +60,11 @@ func main() {
 			}
 			e := &env{blobTmp: p.BlobTmp}
 			e.dump, _ = p.Config["dump"].(string)
-			images, _ := p.Config["images"].([]any)
-			for _, dir := range images {
-				if s, ok := dir.(string); ok && s != "" {
-					e.images = append(e.images, s)
-				}
+			var err error
+			if e.images, err = configImages(p.Config); err != nil {
+				return nil, invalid(err)
 			}
 			if p.DatabaseURL != "" {
-				var err error
 				if e.store, err = catalogkit.Open(ctx, p.DatabaseURL, p.InstanceID, catalogConfig); err != nil {
 					return nil, err
 				}
@@ -128,6 +125,29 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+// configImages reads config.images, a list of folders. Empty entries are skipped.
+func configImages(cfg map[string]any) ([]string, error) {
+	v, ok := cfg["images"]
+	if !ok || v == nil {
+		return nil, nil
+	}
+	list, ok := v.([]any)
+	if !ok {
+		return nil, errors.New("config images must be a list of folder paths")
+	}
+	var dirs []string
+	for _, dir := range list {
+		s, ok := dir.(string)
+		if !ok {
+			return nil, errors.New("config images must be a list of folder paths")
+		}
+		if s != "" {
+			dirs = append(dirs, s)
+		}
+	}
+	return dirs, nil
 }
 
 var errNoDatabase = errors.New("no database: the core sends database_url to a plugin whose manifest sets database = true")

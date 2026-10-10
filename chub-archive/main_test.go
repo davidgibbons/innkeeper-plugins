@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/davidgibbons/innkeeper/protocol"
@@ -44,5 +46,19 @@ func TestGetAvatar(t *testing.T) {
 	e.images = []string{broken}
 	if res, err := get(ctx, e, getParams("chub_character_def:100", "")); err != nil || res.Avatar != "" {
 		t.Fatalf("unreadable image: avatar = %q, err %v; want none", res.Avatar, err)
+	}
+}
+
+func TestConfigImages(t *testing.T) {
+	if got, err := configImages(map[string]any{"images": []any{"/a", "", "/b"}}); err != nil || !slices.Equal(got, []string{"/a", "/b"}) {
+		t.Fatalf("images = %v, %v", got, err)
+	}
+	if got, err := configImages(map[string]any{}); err != nil || got != nil {
+		t.Fatalf("no images = %v, %v", got, err)
+	}
+	for _, bad := range []any{"/a", []any{"/a", 3}} {
+		if _, err := configImages(map[string]any{"images": bad}); err == nil || !strings.Contains(err.Error(), "images") {
+			t.Errorf("images %v: err = %v, want one naming images", bad, err)
+		}
 	}
 }
