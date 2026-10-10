@@ -30,20 +30,24 @@ type Migration struct {
 	SQL  string
 }
 
-// Filter is a declared filter and what it reads. Field is "tag" or
-// "attrs.<key>" for a text filter, and "added" or "updated" for a date
-// range.
+// Filter is a declared filter and what it reads. Field is "tag", "author",
+// or "attrs.<key>" for a text filter; "attrs.<key>" for an enum;
+// "nums.<key>" for a number range; and "added" or "updated" for a date range.
 type Filter struct {
 	protocol.CatalogFilter
 	Field string
 }
 
-// ponytail: only the filters folder declares; chub-archive (37d) adds number ranges.
 func (f Filter) check() error {
+	under := func(prefix string) bool { return strings.HasPrefix(f.Field, prefix) && len(f.Field) > len(prefix) }
 	ok := false
 	switch f.Type {
 	case protocol.FilterText:
-		ok = f.Field == "tag" || strings.HasPrefix(f.Field, "attrs.") && len(f.Field) > len("attrs.")
+		ok = f.Field == "tag" || f.Field == "author" || under("attrs.")
+	case protocol.FilterEnum:
+		ok = under("attrs.")
+	case protocol.FilterNumberRange:
+		ok = under("nums.")
 	case protocol.FilterDateRange:
 		ok = f.Field == "added" || f.Field == "updated"
 	}
@@ -141,7 +145,8 @@ func migrate(ctx context.Context, pool *pgxpool.Pool, ms []Migration) error {
 	return tx.Commit(ctx)
 }
 
-var migrations = []Migration{{Name: "catalogkit/1-items", SQL: `
+var migrations = []Migration{
+	{Name: "catalogkit/1-items", SQL: `
 -- array_to_string isn't immutable, so a generated column can't call it directly.
 CREATE FUNCTION tags_text(text[]) RETURNS text
 	LANGUAGE sql IMMUTABLE PARALLEL SAFE RETURN array_to_string($1, ' ');
@@ -193,4 +198,10 @@ CREATE TABLE item_version (
 	UNIQUE (instance, item_id, version),
 	FOREIGN KEY (instance, item_id) REFERENCES item (instance, id) ON DELETE CASCADE
 );
-`}}
+`},
+	{Name: "catalogkit/2-nums", SQL: `
+ALTER TABLE item ADD nums jsonb NOT NULL DEFAULT '{}';
+CREATE INDEX item_author ON item (instance, lower(author));
+CREATE INDEX item_added ON item (instance, added);
+`},
+}

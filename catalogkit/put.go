@@ -33,6 +33,8 @@ type Entry struct {
 	Image image.Image
 	// Attrs are the values attrs.<key> filters match.
 	Attrs map[string][]string
+	// Numbers are the values nums.<key> filters match.
+	Numbers map[string]float64
 	// Updated is when the source last changed. It dates a new version.
 	Updated time.Time
 }
@@ -56,7 +58,14 @@ func (s *Store) Put(ctx context.Context, e Entry) (Change, error) {
 	if e.Attrs == nil {
 		e.Attrs = map[string][]string{}
 	}
+	if e.Numbers == nil {
+		e.Numbers = map[string]float64{}
+	}
 	attrs, err := json.Marshal(e.Attrs)
+	if err != nil {
+		return 0, err
+	}
+	nums, err := json.Marshal(e.Numbers)
 	if err != nil {
 		return 0, err
 	}
@@ -93,16 +102,16 @@ func (s *Store) Put(ctx context.Context, e Entry) (Change, error) {
 	version := strconv.Itoa(latest)
 	_, err = tx.Exec(ctx, `
 		INSERT INTO item (instance, id, kind, name, author, tags, summary, description, attrs, updated, latest,
-			latest_version, content_hash, data_hash, text_simhash, image_phash, lsh, thumbnail)
-		VALUES ($18, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+			latest_version, content_hash, data_hash, text_simhash, image_phash, lsh, thumbnail, nums)
+		VALUES ($18, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $19)
 		ON CONFLICT (instance, id) DO UPDATE SET kind = excluded.kind, name = excluded.name, author = excluded.author,
 			tags = excluded.tags, summary = excluded.summary, description = excluded.description,
 			attrs = excluded.attrs, updated = excluded.updated, latest = excluded.latest,
 			latest_version = excluded.latest_version, content_hash = excluded.content_hash, data_hash = excluded.data_hash,
 			text_simhash = excluded.text_simhash, image_phash = excluded.image_phash, lsh = excluded.lsh,
-			thumbnail = excluded.thumbnail, removed = false`,
+			thumbnail = excluded.thumbnail, nums = excluded.nums, removed = false`,
 		e.ID, e.Kind, d.name, d.author, d.tags, d.summary, d.description, string(attrs), e.Updated, latest,
-		version, d.contentHash, d.dataHash, d.simhash, d.phash, lsh(d.simhash, d.phash), d.thumbnail, s.instance)
+		version, d.contentHash, d.dataHash, d.simhash, d.phash, lsh(d.simhash, d.phash), d.thumbnail, s.instance, string(nums))
 	if err != nil {
 		return 0, badData(e.ID, err)
 	}
