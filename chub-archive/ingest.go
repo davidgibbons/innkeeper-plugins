@@ -103,7 +103,12 @@ func ingestRow(ctx context.Context, e *env, table string, row map[string]string,
 		return err
 	}
 	hash := row["image_hash"]
-	if b := readImage(e.images, hash); b != nil {
+	// A read error fails the run rather than store the version without its image for good.
+	b, err := readImage(e.images, hash)
+	if err != nil {
+		return err
+	}
+	if b != nil {
 		if en.Image, err = cardhash.DecodeImageBytes(b); err != nil {
 			log.Printf("%s version %s: image %s: %v", en.ID, version, hash, err)
 		}

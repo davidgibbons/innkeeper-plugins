@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -143,5 +145,22 @@ func TestIngestNeedsTheDump(t *testing.T) {
 	var rpc *protocol.Error
 	if !errors.As(err, &rpc) || rpc.Code != protocol.CodeInvalidParams {
 		t.Fatalf("err = %v, want invalid params", err)
+	}
+}
+
+// An image that can't be read fails the run, so a retry reads it again.
+func TestIngestFailsOnUnreadableImage(t *testing.T) {
+	e := testEnv(t)
+	broken := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(broken, "a", "b", "c", "0000000000000000000000000000d"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e.images = []string{broken}
+	params, _ := json.Marshal(protocol.CatalogIngestParams{Run: "r"})
+	if _, err := ingest(context.Background(), e, func(string, any) error { return nil }, params); err == nil {
+		t.Fatal("ingest succeeded without reading Aria's image")
+	}
+	if got := search(t, e, `{"site": "chub"}`); slices.Contains(got, "Aria") {
+		t.Fatalf("Aria was stored without her image: %v", got)
 	}
 }
