@@ -41,6 +41,9 @@ type Entry struct {
 	// Added is when the source first listed the item, or zero for the time
 	// of the first Put. The item keeps the earliest Added it is given.
 	Added time.Time
+	// Version numbers this version from 1, and versions sort by it. Zero
+	// lets Put number them 1, 2, 3 as the data changes.
+	Version int
 	// Updated is when the source last changed. It dates a new version.
 	Updated time.Time
 }
@@ -55,8 +58,12 @@ const (
 )
 
 // Put stores e. Data that hashes differently from the latest version adds a
-// version; the same data only refreshes the item's other fields.
+// version, or with e.Version set, a version number not seen before does.
+// Otherwise it only refreshes the item's other fields.
 func (s *Store) Put(ctx context.Context, e Entry) (Change, error) {
+	if e.Version < 0 {
+		return 0, fmt.Errorf("%w: %s: version %d", ErrBadData, e.ID, e.Version)
+	}
 	d, err := derive(e)
 	if err != nil {
 		return 0, fmt.Errorf("%w: %s: %w", ErrBadData, e.ID, err)
@@ -91,54 +98,70 @@ func (s *Store) Put(ctx context.Context, e Entry) (Change, error) {
 	var removed bool
 	err = tx.QueryRow(ctx, `SELECT data_hash, latest, removed FROM item WHERE instance = $1 AND id = $2 FOR UPDATE`, s.instance, e.ID).
 		Scan(&hash, &latest, &removed)
-	change, newVersion := Unchanged, true
+	// seq numbers e's version. current means e is the latest version, so
+	// the item's fields come from it.
+	change, seq, current, newVersion := Unchanged, e.Version, true, true
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		change, latest = Added, 1
+		change, seq = Added, cmp.Or(e.Version, 1)
 	case err != nil:
 		return 0, err
-	case hash != d.dataHash:
-		change, latest = Updated, latest+1
-	default:
-		newVersion = false
-		if removed {
-			change = Updated
+	case e.Version > 0:
+		err = tx.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM item_version WHERE instance = $1 AND item_id = $2 AND seq = $3)`,
+			s.instance, e.ID, e.Version).Scan(&newVersion)
+		if err != nil {
+			return 0, err
 		}
+		current = e.Version >= latest
+	case hash != d.dataHash:
+		seq = latest + 1
+	default:
+		seq, newVersion = latest, false
 	}
-	version := strconv.Itoa(latest)
+	if change == Unchanged && (newVersion || removed && current) {
+		change = Updated
+	}
+	version := strconv.Itoa(seq)
 	var added *time.Time // NULL keeps the stored date
 	if !e.Added.IsZero() {
 		added = &e.Added
 	}
-	_, err = tx.Exec(ctx, `
-		INSERT INTO item (instance, id, kind, name, author, tags, summary, description, attrs, updated, latest,
-			latest_version, content_hash, data_hash, text_simhash, image_phash, lsh, thumbnail, nums, added)
-		VALUES ($18, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $19,
-			COALESCE($20::timestamptz, now()))
-		ON CONFLICT (instance, id) DO UPDATE SET kind = excluded.kind, name = excluded.name, author = excluded.author,
-			tags = excluded.tags, summary = excluded.summary, description = excluded.description,
-			attrs = excluded.attrs, updated = excluded.updated, latest = excluded.latest,
-			latest_version = excluded.latest_version, content_hash = excluded.content_hash, data_hash = excluded.data_hash,
-			text_simhash = excluded.text_simhash, image_phash = excluded.image_phash, lsh = excluded.lsh,
-			thumbnail = excluded.thumbnail, nums = excluded.nums, added = LEAST(item.added, $20), removed = false`,
-		e.ID, e.Kind, d.name, d.author, d.tags, d.summary, d.description, string(attrs), e.Updated, latest,
-		version, d.contentHash, d.dataHash, d.simhash, d.phash, lsh(d.simhash, d.phash), d.thumbnail, s.instance, string(nums), added)
+	if current {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO item (instance, id, kind, name, author, tags, summary, description, attrs, updated, latest,
+				latest_version, content_hash, data_hash, text_simhash, image_phash, lsh, thumbnail, nums, added)
+			VALUES ($18, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $19,
+				COALESCE($20::timestamptz, now()))
+			ON CONFLICT (instance, id) DO UPDATE SET kind = excluded.kind, name = excluded.name, author = excluded.author,
+				tags = excluded.tags, summary = excluded.summary, description = excluded.description,
+				attrs = excluded.attrs, updated = excluded.updated, latest = excluded.latest,
+				latest_version = excluded.latest_version, content_hash = excluded.content_hash, data_hash = excluded.data_hash,
+				text_simhash = excluded.text_simhash, image_phash = excluded.image_phash, lsh = excluded.lsh,
+				thumbnail = excluded.thumbnail, nums = excluded.nums, added = LEAST(item.added, $20), removed = false`,
+			e.ID, e.Kind, d.name, d.author, d.tags, d.summary, d.description, string(attrs), e.Updated, seq,
+			version, d.contentHash, d.dataHash, d.simhash, d.phash, lsh(d.simhash, d.phash), d.thumbnail, s.instance,
+			string(nums), added)
+	} else {
+		// An older version only moves the date added back.
+		_, err = tx.Exec(ctx, `UPDATE item SET added = LEAST(added, $3) WHERE instance = $1 AND id = $2`, s.instance, e.ID, added)
+	}
 	if err != nil {
-		return 0, badData(e.ID, err)
+		return 0, BadData(e.ID, err)
 	}
 	if newVersion {
 		_, err = tx.Exec(ctx, `INSERT INTO item_version (instance, item_id, seq, version, created, data) VALUES ($1, $2, $3, $4, $5, $6)`,
-			s.instance, e.ID, latest, version, e.Updated, string(e.Data))
+			s.instance, e.ID, seq, version, e.Updated, string(e.Data))
 		if err != nil {
-			return 0, badData(e.ID, err)
+			return 0, BadData(e.ID, err)
 		}
 	}
 	return change, tx.Commit(ctx)
 }
 
-// badData wraps a data exception (SQLSTATE class 22), such as a NUL in text or
-// invalid UTF-8 in json, in ErrBadData so an ingest skips the entry.
-func badData(id string, err error) error {
+// BadData wraps a data exception (SQLSTATE class 22), such as a NUL in text
+// or invalid UTF-8 in json, in ErrBadData, so an ingest skips the entry
+// instead of failing.
+func BadData(id string, err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && strings.HasPrefix(pgErr.Code, "22") {
 		return fmt.Errorf("%w: %s: %w", ErrBadData, id, err)

@@ -209,3 +209,49 @@ func TestPutOverrides(t *testing.T) {
 		t.Fatalf("author %q, tags %v", author, tags)
 	}
 }
+
+// Versions the plugin numbers can arrive out of order; the highest is latest.
+func TestPutPluginVersions(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	e := func(v int, name string, added time.Time) Entry {
+		return Entry{ID: "v", Kind: protocol.KindCard, Data: testCard(name, "Same."), Updated: added, Added: added, Version: v}
+	}
+	steps := []struct {
+		entry Entry
+		want  Change
+	}{
+		{e(5, "Five", t0), Added},
+		{e(9, "Nine", t0.Add(time.Hour)), Updated},
+		{e(7, "Seven", t0.Add(-time.Hour)), Updated}, // older, arriving late
+		{e(9, "Nine", t0.Add(time.Hour)), Unchanged},
+		{e(5, "Five", t0), Unchanged},
+	}
+	for i, st := range steps {
+		got, err := s.Put(ctx, st.entry)
+		if err != nil {
+			t.Fatalf("step %d: %v", i, err)
+		}
+		if got != st.want {
+			t.Fatalf("step %d: change = %v, want %v", i, got, st.want)
+		}
+	}
+	res, err := s.Get(ctx, "v", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var versions []string
+	for _, v := range res.Versions {
+		versions = append(versions, v.Version)
+	}
+	if res.Item.Name != "Nine" || res.Version != "9" || !slices.Equal(versions, []string{"9", "7", "5"}) {
+		t.Fatalf("item %q at %q, versions %v", res.Item.Name, res.Version, versions)
+	}
+	var added time.Time
+	if err := s.pool.QueryRow(ctx, `SELECT added FROM item WHERE id = 'v'`).Scan(&added); err != nil || !added.Equal(t0.Add(-time.Hour)) {
+		t.Fatalf("added = %v, %v; want the late version's earlier date", added, err)
+	}
+	if _, err := s.Put(ctx, Entry{ID: "w", Kind: protocol.KindCard, Data: testCard("W", "W."), Updated: t0, Version: -1}); !errors.Is(err, ErrBadData) {
+		t.Fatalf("negative version: err = %v, want ErrBadData", err)
+	}
+}
