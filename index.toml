@@ -45,3 +45,12 @@ version = "0.1.0"
 protocol = 1
 capabilities = ["push", "pull"]
 description = "Push cards and lorebooks to a SillyTavern server as characters and world info files, and read them back."
+
+[[plugin]]
+name = "folder"
+category = "Archives"
+path = "folder"
+version = "0.1.0"
+protocol = 1
+capabilities = ["catalog"]
+description = "Search and adopt cards and lorebooks from a folder, without importing them all."
