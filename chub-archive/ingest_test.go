@@ -152,20 +152,34 @@ func TestIngestNeedsTheDump(t *testing.T) {
 	}
 }
 
-// An image that can't be read fails the run, so a retry reads it again.
-func TestIngestFailsOnUnreadableImage(t *testing.T) {
+// An image that will never read, such as a directory at its path, leaves
+// the version without one rather than stop every retry on it.
+func TestIngestStoresVersionWithUnreadableImage(t *testing.T) {
 	e := testEnv(t)
 	broken := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(broken, "a", "b", "c", "0000000000000000000000000000d"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	e.images = []string{broken}
-	params, _ := json.Marshal(protocol.CatalogIngestParams{Run: "r"})
-	if _, err := ingest(context.Background(), e, func(string, any) error { return nil }, params); err == nil {
-		t.Fatal("ingest succeeded without reading Aria's image")
+	if res, _, _ := runIngest(t, e, "", nil); res.Added != 8 {
+		t.Fatalf("ingest = %+v, want 8 added", res)
 	}
-	if got := search(t, e, `{"site": "chub"}`); slices.Contains(got, "Aria") {
-		t.Fatalf("Aria was stored without her image: %v", got)
+	got, err := e.store.Get(context.Background(), "chub_character_def:100", "")
+	if err != nil || got.Item.Hashes.ImagePhash != nil {
+		t.Fatalf("Aria: phash %v, err %v; want stored without an image", got.Item.Hashes.ImagePhash, err)
+	}
+}
+
+// Errors the plugin can't fix itself, such as a lost database, are
+// retryable, so the core resumes from the checkpoint instead of byte 0.
+func TestIngestErrorsAreRetryable(t *testing.T) {
+	e := testEnv(t)
+	e.store.Close()
+	params, _ := json.Marshal(protocol.CatalogIngestParams{Run: "r"})
+	_, err := ingest(context.Background(), e, func(string, any) error { return nil }, params)
+	var rpc *protocol.Error
+	if !errors.As(err, &rpc) || !rpc.Retryable() {
+		t.Fatalf("err = %v, want a retryable error", err)
 	}
 }
 

@@ -27,5 +27,7 @@ lorebooks and adopts single versions into the library.
   their ratings and tags don't change.
 - Rows that won't decode are skipped and logged with their table, ID, and
   increment.
-- If an image can't be read for any reason other than being missing, the
-  ingest stops, so it can retry from its last checkpoint.
+- A version whose image is missing or unreadable (permission denied, a
+  folder, over 32 MiB, or not an image) is stored without one. Other image
+  read errors stop the ingest, and the core retries it from its last
+  checkpoint.

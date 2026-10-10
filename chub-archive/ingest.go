@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"strconv"
+	"syscall"
 
 	"github.com/davidgibbons/innkeeper-plugins/catalogkit"
+	"github.com/davidgibbons/innkeeper-plugins/internal/pluginio"
 	"github.com/davidgibbons/innkeeper/cardhash"
 	"github.com/davidgibbons/innkeeper/protocol"
 )
@@ -63,11 +66,17 @@ func ingest(ctx context.Context, e *env, notify func(string, any) error, raw jso
 		if err == nil {
 			err = ingestRow(ctx, e, table, row, &res)
 		}
-		if errors.Is(err, errBadRow) || errors.Is(err, catalogkit.ErrBadData) {
+		var rpc *protocol.Error
+		switch {
+		case errors.Is(err, errBadRow) || errors.Is(err, catalogkit.ErrBadData):
 			res.Skipped++
 			log.Printf("skipped %s %s increment %s: %v", table, row[idColumn(table)], row["increment"], err)
-		} else if err != nil {
+		case err == nil:
+		case ctx.Err() != nil || errors.As(err, &rpc):
 			return res, err
+		default:
+			// The database or the archive's disk failed; the core retries from the last checkpoint.
+			return res, protocol.NewError(protocol.CodeInternalError, err.Error(), true)
 		}
 		if n%checkpointEvery == 0 {
 			if err := report(); err != nil {
@@ -106,15 +115,17 @@ func ingestRow(ctx context.Context, e *env, table string, row map[string]string,
 		return err
 	}
 	hash := row["image_hash"]
-	// A read error fails the run rather than store the version without its image for good.
 	b, err := readImage(e.images, hash)
-	if err != nil {
+	// These fail on every read, so the version is stored without its image.
+	// Other read errors may pass, so the run fails and retries.
+	if err != nil && !errors.Is(err, fs.ErrPermission) && !errors.Is(err, syscall.EISDIR) && !errors.Is(err, pluginio.ErrTooLarge) {
 		return err
 	}
-	if b != nil {
-		if en.Image, err = cardhash.DecodeImageBytes(b); err != nil {
-			log.Printf("%s version %s: image %s: %v", en.ID, version, hash, err)
-		}
+	if err == nil && b != nil {
+		en.Image, err = cardhash.DecodeImageBytes(b)
+	}
+	if err != nil {
+		log.Printf("%s version %s: image %s: %v", en.ID, version, hash, err)
 	}
 	change, err := e.store.Put(ctx, en)
 	if err != nil {
