@@ -76,7 +76,7 @@ func ingest(ctx context.Context, e *env, notify func(string, any) error, raw jso
 		switch {
 		case errors.Is(err, errBadRow) || errors.Is(err, catalogkit.ErrBadData):
 			res.Skipped++
-			log.Printf("skipped %s %s increment %s: %v", table, row[idColumn(table)], row["increment"], err)
+			log.Printf("skipped %s %s increment %s, ending at byte %d: %v", table, row[idColumn(table)], row["increment"], d.at.Offset, err)
 		case err == nil:
 		case ctx.Err() != nil || errors.As(err, &rpc):
 			return res, err
