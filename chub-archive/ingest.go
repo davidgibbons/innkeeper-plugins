@@ -130,11 +130,3 @@ func ingestRow(ctx context.Context, e *env, table string, row map[string]string,
 		ON CONFLICT DO NOTHING`, instance, en.ID, version, hash)
 	return err
 }
-
-// env is what initialize set up.
-type env struct {
-	store   *catalogkit.Store // nil without a database_url
-	dump    string            // config.dump
-	images  []string          // config.images
-	blobTmp string
-}

@@ -136,23 +136,3 @@ func entry(ctx context.Context, s *catalogkit.Store, table string, row map[strin
 	}
 	return e, nil
 }
-
-var catalogConfig = catalogkit.Config{
-	Kinds: []string{protocol.KindCard, protocol.KindLorebook},
-	Filters: []catalogkit.Filter{
-		{CatalogFilter: protocol.CatalogFilter{Name: "site", Label: "Site", Type: protocol.FilterEnum, Options: sites}, Field: "attrs.site"},
-		{CatalogFilter: protocol.CatalogFilter{Name: "tag", Label: "Tag", Type: protocol.FilterText}, Field: "tag"},
-		{CatalogFilter: protocol.CatalogFilter{Name: "author", Label: "Author", Type: protocol.FilterText}, Field: "author"},
-		{CatalogFilter: protocol.CatalogFilter{Name: "added", Label: "Date added", Type: protocol.FilterDateRange}, Field: "added"},
-		{CatalogFilter: protocol.CatalogFilter{Name: "rating", Label: "Rating", Type: protocol.FilterNumberRange}, Field: "nums.rating"},
-		{CatalogFilter: protocol.CatalogFilter{Name: "hidden", Label: "Hidden on its site", Type: protocol.FilterEnum,
-			Options: []protocol.CatalogOption{{Value: "false", Label: "Shown"}, {Value: "true", Label: "Hidden"}}}, Field: "attrs.hidden"},
-	},
-	Ingest: true,
-	Migrations: []catalogkit.Migration{{Name: "chub-archive/1-tables", SQL: `
-CREATE TABLE parent (instance text NOT NULL, item_id text NOT NULL, tags text[] NOT NULL, rating float8,
-	added timestamptz NOT NULL, hidden boolean NOT NULL, PRIMARY KEY (instance, item_id));
-CREATE TABLE source_row (instance text NOT NULL, item_id text NOT NULL, version text NOT NULL,
-	image_hash text NOT NULL, PRIMARY KEY (instance, item_id, version));
-`}},
-}
