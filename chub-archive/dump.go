@@ -115,9 +115,3 @@ func unescape(b []byte) string {
 	}
 	return string(out)
 }
-
-func read(table string) bool { _, ok := sources[table]; _, p := parents[table]; return ok || p }
-
-var sources = map[string]struct{}{"booru_character_def": {}, "chub_character_def": {}, "chub_lorebook_def": {},
-	"generic_character_def": {}, "nyaime_character_def": {}, "risuai_character_def": {}, "webring_character_def": {}}
-var parents = map[string]string{"chub_character": "chub_character_def", "chub_lorebook": "chub_lorebook_def"}
