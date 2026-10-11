@@ -47,6 +47,9 @@ func invalid(err error) error {
 // the end and stores each card and lorebook version.
 func ingest(ctx context.Context, e *env, notify func(string, any) error, raw json.RawMessage) (protocol.CatalogIngestResult, error) {
 	var res protocol.CatalogIngestResult
+	if e.dump == "" {
+		return res, invalid(errors.New("set dump in this instance's config before ingesting"))
+	}
 	var p protocol.CatalogIngestParams
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return res, invalid(err)
