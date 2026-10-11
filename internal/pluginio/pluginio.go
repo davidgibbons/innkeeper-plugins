@@ -11,6 +11,9 @@ import (
 // MaxInput caps the files plugins read. Card PNGs are a few MB at most.
 const MaxInput = 32 << 20
 
+// ErrTooLarge means a file is over MaxInput.
+var ErrTooLarge = fmt.Errorf("over %d MiB", MaxInput>>20)
+
 // ReadFile reads the file at path, failing if it is over MaxInput.
 func ReadFile(path string) ([]byte, error) {
 	f, err := os.Open(path)
@@ -25,7 +28,7 @@ func ReadFile(path string) ([]byte, error) {
 func ReadAll(f *os.File) ([]byte, error) {
 	b, err := io.ReadAll(io.LimitReader(f, MaxInput+1))
 	if err == nil && len(b) > MaxInput {
-		err = fmt.Errorf("%s is over %d MiB", f.Name(), MaxInput>>20)
+		err = fmt.Errorf("%s is %w", f.Name(), ErrTooLarge)
 	}
 	return b, err
 }

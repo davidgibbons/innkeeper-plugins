@@ -165,15 +165,28 @@ func (s *Store) Search(ctx context.Context, p protocol.CatalogSearchParams) (pro
 func (s *Store) filter(b *query, name string, raw json.RawMessage) {
 	f := s.cfg.Filters[slices.IndexFunc(s.cfg.Filters, func(f Filter) bool { return f.Name == name })]
 	switch f.Type {
-	case protocol.FilterText:
+	case protocol.FilterText, protocol.FilterEnum:
 		var v string
 		_ = json.Unmarshal(raw, &v)
-		if f.Field == "tag" {
+		switch f.Field {
+		case "tag":
 			b.where("tags @> ARRAY[" + b.arg(strings.ToLower(v)) + "::text]")
-			return
+		case "author":
+			b.where("lower(author) = lower(" + b.arg(v) + ")")
+		default:
+			match, _ := json.Marshal(map[string][]string{strings.TrimPrefix(f.Field, "attrs."): {v}})
+			b.where("attrs @> " + b.arg(string(match)) + "::jsonb")
 		}
-		match, _ := json.Marshal(map[string][]string{strings.TrimPrefix(f.Field, "attrs."): {v}})
-		b.where("attrs @> " + b.arg(string(match)) + "::jsonb")
+	case protocol.FilterNumberRange:
+		var r protocol.NumberRange
+		_ = json.Unmarshal(raw, &r)
+		num := "(nums->>" + b.arg(strings.TrimPrefix(f.Field, "nums.")) + ")::float8"
+		if r.Min != nil {
+			b.where(num + " >= " + b.arg(*r.Min))
+		}
+		if r.Max != nil {
+			b.where(num + " <= " + b.arg(*r.Max))
+		}
 	case protocol.FilterDateRange:
 		var r protocol.DateRange
 		_ = json.Unmarshal(raw, &r)

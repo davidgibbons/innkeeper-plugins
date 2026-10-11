@@ -222,3 +222,37 @@ func TestInstancesKeepApart(t *testing.T) {
 		t.Fatalf("b lists %v after a's sweep", got)
 	}
 }
+
+func TestSearchEnumAuthorNumberFilters(t *testing.T) {
+	s := openTest(t)
+	put(t, s, Entry{ID: "x", Kind: protocol.KindCard, Data: testCard("Xan", "One."), Updated: t0,
+		Attrs: map[string][]string{"site": {"a"}}, Numbers: map[string]float64{"rating": 4.5}})
+	put(t, s, Entry{ID: "y", Kind: protocol.KindCard, Data: testCard("Yul", "Two."), Updated: t0,
+		Attrs: map[string][]string{"site": {"b"}}, Numbers: map[string]float64{"rating": 2}})
+	put(t, s, Entry{ID: "z", Kind: protocol.KindCard, Data: testCard("Zed", "Three."), Updated: t0})
+
+	f := func(kv ...string) map[string]json.RawMessage {
+		m := map[string]json.RawMessage{}
+		for i := 0; i < len(kv); i += 2 {
+			m[kv[i]] = json.RawMessage(kv[i+1])
+		}
+		return m
+	}
+	cases := []struct {
+		filters map[string]json.RawMessage
+		want    []string
+	}{
+		{f("site", `"a"`), []string{"x"}},
+		{f("author", `"ANN"`), []string{"x", "y", "z"}}, // testCard's creator is "ann"
+		{f("author", `"bob"`), nil},
+		{f("rating", `{"min": 3}`), []string{"x"}},
+		{f("rating", `{"max": 4.5}`), []string{"x", "y"}},
+		{f("rating", `{"min": 1, "max": 3}`), []string{"y"}},
+	}
+	for _, c := range cases {
+		got := searchIDs(t, s, protocol.CatalogSearchParams{Sort: "name", Filters: c.filters})
+		if !slices.Equal(got, c.want) {
+			t.Errorf("%s: got %v, want %v", c.filters, got, c.want)
+		}
+	}
+}

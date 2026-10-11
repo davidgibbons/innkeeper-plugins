@@ -1,0 +1,20 @@
+name = "chub-archive"
+version = "0.1.0"
+protocol = 1
+command = ["./chub-archive"]
+capabilities = ["catalog"]
+database = true
+
+[config]
+type = "object"
+
+[config.properties.dump]
+type = "string"
+title = "Dump file"
+description = "Absolute path of the archive's SQL dump as the core sees it, such as /archive/sql/database_01-05-2025/char_archive_database_01-05-2025.sql."
+
+[config.properties.images]
+type = "array"
+title = "Image folders"
+description = "The archive's hashed-data folders, such as /archive/sql/hashed-data_part1/hashed-data. Without them, items have no image."
+items = { type = "string" }

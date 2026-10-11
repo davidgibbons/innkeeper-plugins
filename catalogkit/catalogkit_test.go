@@ -15,6 +15,11 @@ var testConfig = Config{
 		{CatalogFilter: protocol.CatalogFilter{Name: "tag", Label: "Tag", Type: protocol.FilterText}, Field: "tag"},
 		{CatalogFilter: protocol.CatalogFilter{Name: "dir", Label: "Folder", Type: protocol.FilterText}, Field: "attrs.dir"},
 		{CatalogFilter: protocol.CatalogFilter{Name: "changed", Label: "Changed", Type: protocol.FilterDateRange}, Field: "updated"},
+		{CatalogFilter: protocol.CatalogFilter{Name: "author", Label: "Author", Type: protocol.FilterText}, Field: "author"},
+		{CatalogFilter: protocol.CatalogFilter{Name: "site", Label: "Site", Type: protocol.FilterEnum,
+			Options: []protocol.CatalogOption{{Value: "a", Label: "A"}, {Value: "b", Label: "B"}}}, Field: "attrs.site"},
+		{CatalogFilter: protocol.CatalogFilter{Name: "rating", Label: "Rating", Type: protocol.FilterNumberRange}, Field: "nums.rating"},
+		{CatalogFilter: protocol.CatalogFilter{Name: "added", Label: "Added", Type: protocol.FilterDateRange}, Field: "added"},
 	},
 	Ingest: true,
 }

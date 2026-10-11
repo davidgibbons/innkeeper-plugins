@@ -7,8 +7,13 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	"math"
+	"math/rand/v2"
+	"slices"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/davidgibbons/innkeeper/protocol"
 )
@@ -175,5 +180,142 @@ func TestPutRefusesDataPostgresRejects(t *testing.T) {
 				t.Fatalf("err = %v, want ErrBadData", err)
 			}
 		})
+	}
+}
+
+// randomWords returns n distinct-looking words of random letters, which
+// neither compress nor stem together.
+func randomWords(n int) string {
+	var b strings.Builder
+	for range n {
+		for range 8 {
+			b.WriteByte(byte('a' + rand.IntN(26)))
+		}
+		b.WriteByte(' ')
+	}
+	return b.String()
+}
+
+// A long name is kept, cut short; it would otherwise overflow the name index.
+func TestPutTruncatesLongName(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	name := randomWords(600) // about 5 KB
+	put(t, s, Entry{ID: "long", Kind: protocol.KindCard, Data: testCard(name, "One."), Updated: t0})
+	var got string
+	if err := s.pool.QueryRow(ctx, `SELECT name FROM item WHERE id = 'long'`).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if n := utf8.RuneCountInString(got); n > 501 || !strings.HasPrefix(name, strings.TrimSuffix(got, "…")) {
+		t.Fatalf("name is %d runes: %.40q…", n, got)
+	}
+}
+
+// A description past Postgres's tsvector limit is the entry's fault, not the ingest's.
+func TestPutRefusesHugeDescription(t *testing.T) {
+	s := openTest(t)
+	_, err := s.Put(context.Background(), Entry{ID: "huge", Kind: protocol.KindCard, Data: testCard("Huge", randomWords(200_000)), Updated: t0})
+	if !errors.Is(err, ErrBadData) {
+		t.Fatalf("err = %v, want ErrBadData", err)
+	}
+}
+
+func TestPutOverrides(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	early := t0.Add(-24 * time.Hour)
+	put(t, s, Entry{ID: "o", Kind: protocol.KindCard, Data: testCard("Ann", "One."), Updated: t0,
+		Author: " Zed ", Tags: []string{"Sci-Fi", " "}, Added: t0})
+	// A later put with an earlier Added moves the date back; a zero Added keeps it.
+	put(t, s, Entry{ID: "o", Kind: protocol.KindCard, Data: testCard("Ann", "One."), Updated: t0, Added: early})
+	put(t, s, Entry{ID: "o", Kind: protocol.KindCard, Data: testCard("Ann", "One."), Updated: t0})
+
+	var author string
+	var tags []string
+	var added time.Time
+	if err := s.pool.QueryRow(ctx, `SELECT author, tags, added FROM item WHERE id = 'o'`).Scan(&author, &tags, &added); err != nil {
+		t.Fatal(err)
+	}
+	// The last put had no overrides, so the card's own creator and tags are back.
+	if author != "ann" || !slices.Equal(tags, []string{"fantasy", "elf"}) || !added.Equal(early) {
+		t.Fatalf("author %q, tags %v, added %v", author, tags, added)
+	}
+
+	put(t, s, Entry{ID: "p", Kind: protocol.KindCard, Data: testCard("Bo", "Two."), Updated: t0,
+		Author: " Zed ", Tags: []string{"Sci-Fi", " "}})
+	if err := s.pool.QueryRow(ctx, `SELECT author, tags FROM item WHERE id = 'p'`).Scan(&author, &tags); err != nil {
+		t.Fatal(err)
+	}
+	if author != "Zed" || !slices.Equal(tags, []string{"sci-fi"}) {
+		t.Fatalf("author %q, tags %v", author, tags)
+	}
+}
+
+// Versions the plugin numbers can arrive out of order; the highest is latest.
+func TestPutPluginVersions(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	e := func(v int, name string, added time.Time) Entry {
+		return Entry{ID: "v", Kind: protocol.KindCard, Data: testCard(name, "Same."), Updated: added, Added: added, Version: v}
+	}
+	steps := []struct {
+		entry Entry
+		want  Change
+	}{
+		{e(5, "Five", t0), Added},
+		{e(9, "Nine", t0.Add(time.Hour)), Updated},
+		{e(7, "Seven", t0.Add(-time.Hour)), Updated}, // older, arriving late
+		{e(9, "Nine", t0.Add(time.Hour)), Unchanged},
+		{e(5, "Five", t0), Unchanged},
+	}
+	for i, st := range steps {
+		got, err := s.Put(ctx, st.entry)
+		if err != nil {
+			t.Fatalf("step %d: %v", i, err)
+		}
+		if got != st.want {
+			t.Fatalf("step %d: change = %v, want %v", i, got, st.want)
+		}
+	}
+	res, err := s.Get(ctx, "v", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var versions []string
+	for _, v := range res.Versions {
+		versions = append(versions, v.Version)
+	}
+	if res.Item.Name != "Nine" || res.Version != "9" || !slices.Equal(versions, []string{"9", "7", "5"}) {
+		t.Fatalf("item %q at %q, versions %v", res.Item.Name, res.Version, versions)
+	}
+	if old, err := s.Get(ctx, "v", "7"); err != nil || !bytes.Contains(old.Data, []byte(`"Seven"`)) {
+		t.Fatalf("version 7: data %s, err %v", old.Data, err)
+	}
+	var added time.Time
+	if err := s.pool.QueryRow(ctx, `SELECT added FROM item WHERE id = 'v'`).Scan(&added); err != nil || !added.Equal(t0.Add(-time.Hour)) {
+		t.Fatalf("added = %v, %v; want the late version's earlier date", added, err)
+	}
+	// New data under a stored number changes neither the version nor the item.
+	if got, err := s.Put(ctx, e(9, "Ten", t0.Add(time.Hour))); err != nil || got != Unchanged {
+		t.Fatalf("reused number: %v, %v", got, err)
+	}
+	if again, err := s.Get(ctx, "v", ""); err != nil || again.Item.Name != "Nine" {
+		t.Fatalf("after reused number: %q, %v", again.Item.Name, err)
+	}
+	// An older new version of a removed item brings it back.
+	if _, err := s.MarkRemovedExcept(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Put(ctx, e(3, "Three", t0.Add(-2*time.Hour))); err != nil || got != Updated {
+		t.Fatalf("older version of removed item: %v, %v", got, err)
+	}
+	if ids := searchIDs(t, s, protocol.CatalogSearchParams{Sort: "name"}); !slices.Equal(ids, []string{"v"}) {
+		t.Fatalf("search after restore: %v", ids)
+	}
+	if _, err := s.Put(ctx, Entry{ID: "w", Kind: protocol.KindCard, Data: testCard("W", "W."), Updated: t0, Version: math.MaxInt32 + 1}); !errors.Is(err, ErrBadData) {
+		t.Fatalf("huge version: err = %v, want ErrBadData", err)
+	}
+	if _, err := s.Put(ctx, Entry{ID: "w", Kind: protocol.KindCard, Data: testCard("W", "W."), Updated: t0, Version: -1}); !errors.Is(err, ErrBadData) {
+		t.Fatalf("negative version: err = %v, want ErrBadData", err)
 	}
 }

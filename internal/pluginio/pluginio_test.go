@@ -1,6 +1,7 @@
 package pluginio
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,8 +17,8 @@ func TestReadFileCaps(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.Close()
-	if _, err := ReadFile(path); err == nil {
-		t.Fatal("read a file over MaxInput")
+	if _, err := ReadFile(path); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("err = %v, want ErrTooLarge", err)
 	}
 }
 
