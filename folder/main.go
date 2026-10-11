@@ -5,12 +5,10 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/fs"
 	"log"
 	"os"
-	"sync/atomic"
 	"time"
 
 	"github.com/davidgibbons/innkeeper-plugins/card"
@@ -42,83 +40,18 @@ type env struct {
 }
 
 func main() {
-	// Set by initialize; requests run on other goroutines.
-	var cur atomic.Pointer[env]
-	var conn *protocol.Conn
-	handler := func(ctx context.Context, method string, params json.RawMessage) (any, error) {
-		switch method {
-		case protocol.MethodInitialize:
-			var p protocol.InitializeParams
-			if err := json.Unmarshal(params, &p); err != nil {
-				return nil, invalid(err)
-			}
-			e := &env{blobTmp: p.BlobTmp}
+	err := catalogkit.Serve(catalogkit.Plugin[*env]{Name: "folder", Version: version, Config: catalogConfig,
+		Open: func(p protocol.InitializeParams, store *catalogkit.Store) (*env, error) {
+			e := &env{store: store, blobTmp: p.BlobTmp}
 			e.folder, _ = p.Config["folder"].(string)
-			if p.DatabaseURL != "" {
-				var err error
-				if e.store, err = catalogkit.Open(ctx, p.DatabaseURL, p.InstanceID, catalogConfig); err != nil {
-					return nil, err
-				}
-			}
-			cur.Store(e)
-			return protocol.InitializeResult{Protocol: protocol.Version, Name: "folder", Version: version,
-				Capabilities: []string{"catalog"}}, nil
-		case protocol.MethodShutdown:
-			if e := cur.Load(); e != nil && e.store != nil {
-				e.store.Close()
-			}
-			return nil, nil
-		case protocol.MethodCatalogDescribe:
-			return catalogkit.Describe(catalogConfig), nil
-		case protocol.MethodCatalogSearch, protocol.MethodCatalogGet, protocol.MethodCatalogSimilar, protocol.MethodCatalogIngest:
-		default:
-			return nil, protocol.MethodNotFound(method)
-		}
-		e := cur.Load()
-		if e == nil {
-			return nil, fmt.Errorf("%s before initialize", method)
-		}
-		// Search checks its params first, so plugin check's filter check
-		// passes without a database too.
-		if method == protocol.MethodCatalogSearch {
-			var p protocol.CatalogSearchParams
-			if err := json.Unmarshal(params, &p); err != nil {
-				return nil, invalid(err)
-			}
-			if err := catalogkit.Describe(catalogConfig).CheckSearch(p); err != nil {
-				return nil, invalid(err)
-			}
-			if e.store == nil {
-				return nil, errNoDatabase
-			}
-			return e.store.Search(ctx, p)
-		}
-		if e.store == nil {
-			return nil, errNoDatabase
-		}
-		switch method {
-		case protocol.MethodCatalogGet:
-			return get(ctx, e, params)
-		case protocol.MethodCatalogSimilar:
-			var p protocol.CatalogSimilarParams
-			if err := json.Unmarshal(params, &p); err != nil {
-				return nil, invalid(err)
-			}
-			return e.store.Similar(ctx, p)
-		}
-		if e.folder == "" {
-			return nil, invalid(errors.New("set folder in this instance's config before ingesting"))
-		}
-		return ingest(ctx, e, conn.Notify, params)
-	}
-	conn = protocol.NewConn(os.Stdin, os.Stdout, handler)
-	if err := conn.Run(context.Background()); err != nil {
+			return e, nil
+		},
+		Get: get, Ingest: ingest})
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
-
-var errNoDatabase = errors.New("no database: the core sends database_url to a plugin whose manifest sets database = true")
 
 // get answers catalog.get. The avatar comes from the file, so only the
 // latest version of an unchanged file has one.
