@@ -207,9 +207,11 @@ func stored(ctx context.Context, s *catalogkit.Store, id, version string) (bool,
 	return seen, err
 }
 
-// loadImage reads and decodes a version row's image, or returns nil for a
-// version already stored. An image that can never be read is logged and left
-// out; any other read error is returned, to fail the run for the core to retry.
+// loadImage reads and decodes a version row's image and copies it into the
+// image store. It returns nil for a version already stored, after filling
+// the store if it lacks the image. An image that can never be read is logged
+// and left out; any other read or write error is returned, to fail the run
+// for the core to retry.
 func loadImage(ctx context.Context, e *env, table string, row map[string]string) (image.Image, error) {
 	id, inc := table+":"+row[sources[table].idCol], row["increment"]
 	if inc == "" {
@@ -220,20 +222,32 @@ func loadImage(ctx context.Context, e *env, table string, row map[string]string)
 		return nil, nil
 	}
 	version := strconv.Itoa(v)
-	if seen, err := stored(ctx, e.store, id, version); err != nil || seen {
+	seen, err := stored(ctx, e.store, id, version)
+	if err != nil {
 		return nil, err
 	}
 	hash := row["image_hash"]
+	if seen && findStored(e.imageStore, hash) != "" {
+		return nil, nil
+	}
 	b, err := readImage(e.images, hash)
 	if err != nil && !errors.Is(err, fs.ErrPermission) && !errors.Is(err, syscall.EISDIR) && !errors.Is(err, pluginio.ErrTooLarge) {
 		return nil, err
 	}
 	var img image.Image
 	if err == nil && b != nil {
-		img, err = cardhash.DecodeImageBytes(b)
+		if img, err = cardhash.DecodeImageBytes(b); err == nil {
+			if err := saveImage(e.imageStore, hash, b); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if err != nil {
 		log.Printf("%s version %s: image %s: %v", id, version, hash, err)
+	}
+	if seen {
+		// Already ingested; this only filled the store.
+		return nil, nil
 	}
 	return img, nil
 }

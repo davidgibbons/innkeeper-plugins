@@ -101,6 +101,9 @@ func TestIngest(t *testing.T) {
 	if last.Table != "" || last.Offset != info.Size() {
 		t.Fatalf("last checkpoint = %+v, want the end of the dump", last)
 	}
+	if findStored(e.imageStore, fixtureHash) == "" {
+		t.Fatal("ingest didn't copy Aria's image into the image store")
+	}
 
 	all := search(t, e, "")
 	if want := []string{"Aria", "Ava", "Brin", "Cora", "Eldoria", "Esther", "Nina", "Vergil"}; !slices.Equal(all, want) {
@@ -221,5 +224,34 @@ func TestIngestNeedsTheImageFolders(t *testing.T) {
 		if !errors.As(err, &rpc) || rpc.Code != protocol.CodeInvalidParams {
 			t.Fatalf("%s: err = %v, want invalid params", dir, err)
 		}
+	}
+}
+
+// Versions already ingested still get their image copied, so a new or
+// incomplete store fills on the next ingest.
+func TestIngestBackfillsTheImageStore(t *testing.T) {
+	e := testEnv(t)
+	runIngest(t, e, "", nil)
+	e.imageStore = t.TempDir()
+	if res, _, _ := runIngest(t, e, "", nil); res.Added != 0 || res.Updated != 0 {
+		t.Fatalf("re-ingest = %+v, want nothing new", res)
+	}
+	if findStored(e.imageStore, fixtureHash) == "" {
+		t.Fatal("re-ingest didn't copy the image into the new store")
+	}
+}
+
+// A store write that fails is retried from the checkpoint, like a failed read.
+func TestIngestImageStoreWriteErrorIsRetryable(t *testing.T) {
+	e := testEnv(t)
+	// A file where the image's folder belongs fails the write after the precheck passes.
+	if err := os.WriteFile(filepath.Join(e.imageStore, "ab"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	params, _ := json.Marshal(protocol.CatalogIngestParams{Run: "r"})
+	_, err := ingest(context.Background(), e, func(string, any) error { return nil }, params)
+	var rpc *protocol.Error
+	if !errors.As(err, &rpc) || !rpc.Retryable() {
+		t.Fatalf("err = %v, want a retryable error", err)
 	}
 }
