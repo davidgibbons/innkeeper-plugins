@@ -1,1 +1,1 @@
-{"dump": "testdata/dump.sql", "images": ["testdata/images"]}
+{"dump": "testdata/dump.sql", "images": ["testdata/images"], "image_store": "testdata/store"}

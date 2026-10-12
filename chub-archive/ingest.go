@@ -65,6 +65,9 @@ func ingest(ctx context.Context, e *env, notify func(string, any) error, raw jso
 			return res, invalid(fmt.Errorf("config images: %s is not a folder; is the archive mounted?", dir))
 		}
 	}
+	if err := checkWritable(e.imageStore); err != nil {
+		return res, invalid(fmt.Errorf("config image_store: %w; is the image store mounted?", err))
+	}
 	d, err := openDump(e.dump, at)
 	if errors.Is(err, errDumpChanged) {
 		return res, invalid(err)

@@ -40,10 +40,11 @@ CREATE TABLE source_row (instance text NOT NULL, item_id text NOT NULL, version 
 
 // env is what initialize set up.
 type env struct {
-	store   *catalogkit.Store // nil without a database_url
-	dump    string            // config.dump
-	images  []string          // config.images
-	blobTmp string
+	store      *catalogkit.Store // nil without a database_url
+	dump       string            // config.dump
+	images     []string          // config.images
+	imageStore string            // config.image_store
+	blobTmp    string
 }
 
 func main() {
@@ -51,6 +52,7 @@ func main() {
 		Open: func(p protocol.InitializeParams, store *catalogkit.Store) (*env, error) {
 			e := &env{store: store, blobTmp: p.BlobTmp}
 			e.dump, _ = p.Config["dump"].(string)
+			e.imageStore, _ = p.Config["image_store"].(string)
 			var err error
 			if e.images, err = configImages(p.Config); err != nil {
 				return nil, invalid(err)

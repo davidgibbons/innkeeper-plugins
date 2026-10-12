@@ -18,3 +18,8 @@ type = "array"
 title = "Image folders"
 description = "The archive's hashed-data folders, such as /archive/sql/hashed-data_part1/hashed-data. Without them, items have no image."
 items = { type = "string" }
+
+[config.properties.image_store]
+type = "string"
+title = "Image store"
+description = "Absolute path of a writable folder that ingest copies the archive's images into, about 100 GB for the 01-05-2025 dump. Avatars are read from here, so the takeout needs mounting only while ingesting."

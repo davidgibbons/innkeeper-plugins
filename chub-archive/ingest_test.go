@@ -22,7 +22,23 @@ func testEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	t.Cleanup(store.Close)
-	return &env{store: store, dump: "testdata/dump.sql", images: []string{"testdata/images"}, blobTmp: t.TempDir()}
+	return &env{store: store, dump: "testdata/dump.sql", images: []string{"testdata/images"},
+		imageStore: t.TempDir(), blobTmp: t.TempDir()}
+}
+
+// Without a writable store, every version would be ingested without its
+// image being kept, and avatars would be gone once the takeout is unmounted.
+func TestIngestNeedsAWritableImageStore(t *testing.T) {
+	for _, dir := range []string{"", "testdata/missing", "testdata/dump.sql"} {
+		e := testEnv(t)
+		e.imageStore = dir
+		params, _ := json.Marshal(protocol.CatalogIngestParams{Run: "r"})
+		_, err := ingest(context.Background(), e, func(string, any) error { return nil }, params)
+		var rpc *protocol.Error
+		if !errors.As(err, &rpc) || rpc.Code != protocol.CodeInvalidParams || !strings.Contains(err.Error(), "image_store") {
+			t.Fatalf("%q: err = %v, want invalid params naming image_store", dir, err)
+		}
+	}
 }
 
 // runIngest ingests from checkpoint. stop, if set, ends the run with an
