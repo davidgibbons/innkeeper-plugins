@@ -255,3 +255,20 @@ func TestIngestImageStoreWriteErrorIsRetryable(t *testing.T) {
 		t.Fatalf("err = %v, want a retryable error", err)
 	}
 }
+
+// A failed write while filling the store for versions already ingested
+// fails the run too, rather than leaving the store unfilled.
+func TestIngestBackfillWriteErrorIsRetryable(t *testing.T) {
+	e := testEnv(t)
+	runIngest(t, e, "", nil)
+	e.imageStore = t.TempDir()
+	if err := os.WriteFile(filepath.Join(e.imageStore, "ab"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	params, _ := json.Marshal(protocol.CatalogIngestParams{Run: "r"})
+	_, err := ingest(context.Background(), e, func(string, any) error { return nil }, params)
+	var rpc *protocol.Error
+	if !errors.As(err, &rpc) || !rpc.Retryable() {
+		t.Fatalf("err = %v, want a retryable error", err)
+	}
+}

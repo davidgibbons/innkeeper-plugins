@@ -11,8 +11,9 @@ import (
 	"github.com/davidgibbons/innkeeper-plugins/internal/pluginio"
 )
 
-// imageExts maps the image types the store keeps to their extensions.
-var imageExts = map[string]string{"image/png": "png", "image/webp": "webp", "image/jpeg": "jpg", "image/gif": "gif"}
+// imageExts are the image types the store keeps, most common first, since
+// findStored tries each in turn.
+var imageExts = []struct{ mime, ext string }{{"image/png", "png"}, {"image/webp", "webp"}, {"image/jpeg", "jpg"}, {"image/gif", "gif"}}
 
 // validHash reports whether hash is lowercase hex long enough to name a
 // file, so it can't name a path outside a folder.
@@ -47,8 +48,8 @@ func findStored(store, hash string) string {
 	if store == "" || !validHash(hash) {
 		return ""
 	}
-	for _, ext := range imageExts {
-		if p := storePath(store, hash, ext); fileExists(p) {
+	for _, t := range imageExts {
+		if p := storePath(store, hash, t.ext); fileExists(p) {
 			return p
 		}
 	}
@@ -64,7 +65,13 @@ func fileExists(path string) bool {
 // already. Bytes that aren't a stored image type are skipped. It writes a
 // temporary file and renames it, so a crashed ingest never leaves a partial image.
 func saveImage(store, hash string, b []byte) error {
-	ext := imageExts[http.DetectContentType(b)]
+	var ext string
+	mime := http.DetectContentType(b)
+	for _, t := range imageExts {
+		if t.mime == mime {
+			ext = t.ext
+		}
+	}
 	if ext == "" || !validHash(hash) {
 		return nil
 	}

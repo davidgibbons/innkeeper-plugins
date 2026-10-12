@@ -175,12 +175,13 @@ func ingestRow(ctx context.Context, e *env, r *pending, res *protocol.CatalogIng
 		return err
 	}
 	version := strconv.Itoa(en.Version)
+	// Before the stored check: filling the store for a stored version can fail too.
+	if r.imgErr != nil {
+		return r.imgErr
+	}
 	// Checked again here, in dump order, in case the dump repeats a version.
 	if seen, err := stored(ctx, e.store, en.ID, version); err != nil || seen {
 		return err
-	}
-	if r.imgErr != nil {
-		return r.imgErr
 	}
 	en.Image = r.img
 	change, err := e.store.Put(ctx, en)
