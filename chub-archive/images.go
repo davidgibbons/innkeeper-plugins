@@ -62,7 +62,7 @@ func fileExists(path string) bool {
 
 // saveImage writes b, the image with hash, into the store unless it is there
 // already. Bytes that aren't a stored image type are skipped. It writes a
-// temporary file and renames it, so a crash never leaves a partial image.
+// temporary file and renames it, so a crashed ingest never leaves a partial image.
 func saveImage(store, hash string, b []byte) error {
 	ext := imageExts[http.DetectContentType(b)]
 	if ext == "" || !validHash(hash) {
@@ -82,6 +82,10 @@ func saveImage(store, hash string, b []byte) error {
 	_, err = f.Write(b)
 	if cerr := f.Close(); err == nil {
 		err = cerr
+	}
+	// CreateTemp makes files only their owner can read.
+	if err == nil {
+		err = os.Chmod(f.Name(), 0o644)
 	}
 	if err == nil {
 		err = os.Rename(f.Name(), path)
