@@ -15,7 +15,8 @@ import (
 )
 
 // TestRealDump ingests a real dump: CHUB_DUMP is its path, CHUB_IMAGES the
-// image folders separated by colons, and CHUB_DATABASE_URL the database.
+// image folders separated by colons, CHUB_IMAGE_STORE the image store folder,
+// and CHUB_DATABASE_URL the database.
 func TestRealDump(t *testing.T) {
 	dump := os.Getenv("CHUB_DUMP")
 	if dump == "" {
@@ -27,7 +28,8 @@ func TestRealDump(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	e := &env{store: store, dump: dump, images: strings.Split(os.Getenv("CHUB_IMAGES"), ":"), blobTmp: t.TempDir()}
+	e := &env{store: store, dump: dump, images: strings.Split(os.Getenv("CHUB_IMAGES"), ":"),
+		imageStore: os.Getenv("CHUB_IMAGE_STORE"), blobTmp: t.TempDir()}
 	n := 0
 	var cp json.RawMessage
 	notify := func(method string, params any) error {

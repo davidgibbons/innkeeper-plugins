@@ -17,7 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 var catalogConfig = catalogkit.Config{
 	Kinds: []string{protocol.KindCard, protocol.KindLorebook},
