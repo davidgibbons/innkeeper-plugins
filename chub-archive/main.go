@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/davidgibbons/innkeeper-plugins/catalogkit"
 	"github.com/davidgibbons/innkeeper-plugins/internal/pluginio"
@@ -89,7 +90,7 @@ func configImages(cfg map[string]any) ([]string, error) {
 	return dirs, nil
 }
 
-// get answers catalog.get, with the version's image from the archive as
+// get answers catalog.get, with the version's image from the image store as
 // its avatar.
 func get(ctx context.Context, e *env, raw json.RawMessage) (protocol.CatalogGetResult, error) {
 	var p protocol.CatalogGetParams
@@ -109,14 +110,16 @@ func get(ctx context.Context, e *env, raw json.RawMessage) (protocol.CatalogGetR
 	if err != nil {
 		return res, err
 	}
-	b, err := readImage(e.images, hash)
+	path := findStored(e.imageStore, hash)
+	if path == "" {
+		return res, nil
+	}
+	b, err := pluginio.ReadFile(path)
 	if err != nil {
 		// The item is still worth showing without its avatar.
 		log.Printf("get %s version %s: image %s: %v", p.ID, res.Version, hash, err)
 		return res, nil
 	}
-	if b != nil {
-		res.Avatar, err = pluginio.WriteTmp(e.blobTmp, "avatar-*.png", b)
-	}
+	res.Avatar, err = pluginio.WriteTmp(e.blobTmp, "avatar-*"+filepath.Ext(path), b)
 	return res, err
 }
