@@ -3,18 +3,28 @@ package main
 import (
 	"errors"
 	"io/fs"
+	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/davidgibbons/innkeeper-plugins/internal/pluginio"
 )
 
+// imageExts maps the image types the store keeps to their extensions.
+var imageExts = map[string]string{"image/png": "png", "image/webp": "webp", "image/jpeg": "jpg", "image/gif": "gif"}
+
+// validHash reports whether hash is lowercase hex long enough to name a
+// file, so it can't name a path outside a folder.
+func validHash(hash string) bool {
+	return len(hash) >= 4 && strings.Trim(hash, "0123456789abcdef") == ""
+}
+
 // readImage reads the image the archive stores under hash, from the first of
 // dirs that has it. It returns nil and no error when none has it. The
 // archive keeps each at <a>/<b>/<c>/<the rest of the hash>.
 func readImage(dirs []string, hash string) ([]byte, error) {
-	// Lowercase hex only, so a hash can't name a path outside dirs.
-	if len(hash) < 4 || strings.Trim(hash, "0123456789abcdef") != "" {
+	if !validHash(hash) {
 		return nil, nil
 	}
 	for _, dir := range dirs {
@@ -24,4 +34,74 @@ func readImage(dirs []string, hash string) ([]byte, error) {
 		}
 	}
 	return nil, nil
+}
+
+// storePath is where the image store keeps the image with hash.
+func storePath(store, hash, ext string) string {
+	return filepath.Join(store, hash[:2], hash[2:4], hash+"."+ext)
+}
+
+// findStored returns the path of the image with hash in the store, or "" if
+// the store doesn't have it.
+func findStored(store, hash string) string {
+	if store == "" || !validHash(hash) {
+		return ""
+	}
+	for _, ext := range imageExts {
+		if p := storePath(store, hash, ext); fileExists(p) {
+			return p
+		}
+	}
+	return ""
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
+}
+
+// saveImage writes b, the image with hash, into the store unless it is there
+// already. Bytes that aren't a stored image type are skipped. It writes a
+// temporary file and renames it, so a crash never leaves a partial image.
+func saveImage(store, hash string, b []byte) error {
+	ext := imageExts[http.DetectContentType(b)]
+	if ext == "" || !validHash(hash) {
+		return nil
+	}
+	path := storePath(store, hash, ext)
+	if fileExists(path) {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(b)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(f.Name(), path)
+	}
+	if err != nil {
+		os.Remove(f.Name())
+	}
+	return err
+}
+
+// checkWritable fails unless dir is a folder ingest can write to. It
+// doesn't create dir: a missing store usually means a missing mount.
+func checkWritable(dir string) error {
+	if dir == "" {
+		return errors.New("is not set")
+	}
+	f, err := os.CreateTemp(dir, ".check-*")
+	if err != nil {
+		return err
+	}
+	f.Close()
+	return os.Remove(f.Name())
 }
