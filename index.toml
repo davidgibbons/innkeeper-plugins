@@ -63,3 +63,12 @@ version = "0.2.0"
 protocol = 1
 capabilities = ["catalog"]
 description = "Search and adopt cards and lorebooks from the chub.ai archive's SQL dump."
+
+[[plugin]]
+name = "url-import"
+category = "Import"
+path = "url-import"
+version = "0.1.0"
+protocol = 1
+capabilities = ["import"]
+description = "Import a card or lorebook from its page URL on chub.ai, RisuRealm, or Character Tavern."
