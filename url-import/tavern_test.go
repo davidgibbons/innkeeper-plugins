@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/davidgibbons/innkeeper/protocol"
@@ -32,5 +33,16 @@ func TestTavern(t *testing.T) {
 		if _, err := importURL(t, f, page); rpcErr(t, err).Code != protocol.CodeInvalidParams {
 			t.Errorf("%s: err = %v, want invalid params", page, err)
 		}
+	}
+}
+
+func TestTavernHTML(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET ct-cards.storage.character-tavern.com/ann/page.png", func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte("<!doctype html><title>Sign in</title>"))
+	})
+	_, err := importURL(t, sites(t, mux), "https://character-tavern.com/character/ann/page")
+	if e := rpcErr(t, err); e.Retryable() || !strings.Contains(e.Message, "not a character card") {
+		t.Errorf("err = %v, want a permanent not-a-card error", err)
 	}
 }

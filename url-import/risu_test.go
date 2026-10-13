@@ -68,3 +68,18 @@ func TestRisuErrors(t *testing.T) {
 		t.Errorf("missing card: err = %v", err)
 	}
 }
+
+func TestRisuOddAnswers(t *testing.T) {
+	const id = "11111111-2222-3333-4444-555555555555"
+	for name, body := range map[string]string{
+		"no card node": `{"type":"data","nodes":[null,{"type":"data","data":[{"user":1},"x"]}]}`,
+		"unknown type": risuData("hologram"),
+	} {
+		mux := http.NewServeMux()
+		mux.HandleFunc("GET realm.risuai.net/character/{id}/__data.json", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte(body)) })
+		_, err := importURL(t, sites(t, mux), "https://realm.risuai.net/character/"+id)
+		if e := rpcErr(t, err); e.Retryable() || e.Code != protocol.CodeInternalError {
+			t.Errorf("%s: err = %v, want a permanent error", name, err)
+		}
+	}
+}

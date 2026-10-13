@@ -190,8 +190,9 @@ func TestBadAvatarKeepsDecoded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ev := emitted(t, append(sent, nil)); ev.Avatar == "" {
-		t.Error("the decoded avatar was dropped")
+	ev, ok := sent[0].(protocol.EmitCard)
+	if !ok || ev.Avatar == "" {
+		t.Errorf("sent[0] = %+v, want an EmitCard with the decoded avatar", sent[0])
 	}
 }
 
@@ -213,5 +214,16 @@ func TestGetRefusesPrivateHost(t *testing.T) {
 	_, err := newFetcher().get(context.Background(), "Example", srv.URL)
 	if e := rpcErr(t, err); e.Retryable() || !strings.Contains(e.Message, "refused to connect to a private address") {
 		t.Errorf("err = %v, want a permanent refusal", err)
+	}
+}
+
+func TestHTTPOwnerURLUsesHTTPSItem(t *testing.T) {
+	sent, err := importURL(t, chubSite(t), "http://chub.ai/characters/u/seraphina")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const item = "https://chub.ai/characters/u/seraphina"
+	if ev := emitted(t, sent); ev.Item != item || !slices.Contains(sources(t, ev.Card), item) {
+		t.Errorf("item %q, source %q", ev.Item, sources(t, ev.Card))
 	}
 }
