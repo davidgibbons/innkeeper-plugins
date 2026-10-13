@@ -129,6 +129,9 @@ func TestFetchErrors(t *testing.T) {
 	mux.HandleFunc("GET example.test/redir", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "http://example.test/ua", http.StatusFound)
 	})
+	mux.HandleFunc("GET example.test/multi", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/ua", http.StatusMultipleChoices)
+	})
 	mux.HandleFunc("GET example.test/hop", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "https://example.test/ua", http.StatusFound)
 	})
@@ -148,6 +151,9 @@ func TestFetchErrors(t *testing.T) {
 	}
 	if _, err := f.get(context.Background(), "Example", "https://example.test/redir"); err == nil || !strings.Contains(err.Error(), "Example redirected off https to http://example.test/ua") {
 		t.Errorf("redirect off https: err = %v", err)
+	}
+	if _, err := f.get(context.Background(), "Example", "https://example.test/multi"); err == nil || strings.Contains(err.Error(), "off https") || !strings.Contains(err.Error(), "Example answered 300") {
+		t.Errorf("300 with https Location: err = %v", err)
 	}
 	if ua, err := f.get(context.Background(), "Example", "https://example.test/hop"); err != nil || len(ua) == 0 {
 		t.Errorf("https redirect: %q, %v", ua, err)

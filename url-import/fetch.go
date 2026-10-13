@@ -56,10 +56,13 @@ func (f *fetcher) get(ctx context.Context, site, url string) ([]byte, error) {
 		return nil, retryable(fmt.Errorf("%s: %w", site, err))
 	}
 	defer resp.Body.Close()
+	// httpsOnly stops a redirect off https; Go follows the rest, but not 300 or 305.
+	if h := resp.Header.Get("Location"); resp.StatusCode/100 == 3 && h != "" {
+		if loc, err := req.URL.Parse(h); err == nil && loc.Scheme != "https" {
+			return nil, permanent(fmt.Errorf("%s redirected off https to %s", site, loc.Redacted()))
+		}
+	}
 	switch {
-	case resp.StatusCode/100 == 3 && resp.Header.Get("Location") != "":
-		// httpsOnly stopped a redirect; Go follows the rest.
-		return nil, permanent(fmt.Errorf("%s redirected off https to %s", site, resp.Header.Get("Location")))
 	case resp.StatusCode == http.StatusNotFound:
 		return nil, permanent(fmt.Errorf("not found on %s", site))
 	case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500:
