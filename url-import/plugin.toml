@@ -1,0 +1,5 @@
+name = "url-import"
+version = "0.1.0"
+protocol = 1
+command = ["./url-import"]
+capabilities = ["import"]

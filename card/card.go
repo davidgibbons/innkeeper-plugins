@@ -102,7 +102,7 @@ func Encode(card json.RawMessage, format string, avatar []byte) ([]byte, string,
 	case FormatJSONV2:
 		return v2, "json", nil
 	case FormatPNG:
-		img, err := asPNG(avatar)
+		img, err := AsPNG(avatar)
 		if err != nil {
 			return nil, "", err
 		}
@@ -188,9 +188,9 @@ func toV2(card json.RawMessage) ([]byte, error) {
 	return json.Marshal(map[string]any{"spec": "chara_card_v2", "spec_version": "2.0", "data": c.Data})
 }
 
-// asPNG returns avatar as a PNG, converting other image formats, or the
+// AsPNG returns avatar as a PNG, converting other image formats, or the
 // placeholder when avatar is empty.
-func asPNG(avatar []byte) ([]byte, error) {
+func AsPNG(avatar []byte) ([]byte, error) {
 	if len(avatar) == 0 {
 		return placeholder()
 	}

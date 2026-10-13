@@ -12,7 +12,15 @@ import (
 	"github.com/davidgibbons/innkeeper-plugins/internal/pluginio"
 )
 
-func isZip(b []byte) bool { return bytes.HasPrefix(b, []byte("PK\x03\x04")) }
+// isZip reports whether b is a zip, perhaps with data in front of it, such as
+// RisuRealm's JPEG. A PNG is never one, even if its pixels hold an end record.
+func isZip(b []byte) bool {
+	if bytes.HasPrefix(b, []byte("PK\x03\x04")) {
+		return true
+	}
+	const maxEnd = 22 + 0xffff // the end record and its longest comment
+	return !isPNG(b) && bytes.Contains(b[max(0, len(b)-maxEnd):], []byte("PK\x05\x06"))
+}
 
 // decodeCharX reads a CharX zip: the card from card.json and the avatar from
 // the main icon asset. A missing or unreadable icon gives no avatar.
@@ -46,7 +54,7 @@ func decodeCharX(b []byte) (card json.RawMessage, img []byte, err error) {
 			if err != nil {
 				return card, nil, nil
 			}
-			if img, err = asPNG(icon); err != nil {
+			if img, err = AsPNG(icon); err != nil {
 				img = nil
 			}
 			return card, img, nil
