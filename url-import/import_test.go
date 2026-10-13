@@ -27,7 +27,7 @@ func sites(t *testing.T, mux *http.ServeMux) *fetcher {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	target, _ := url.Parse(srv.URL)
-	return &fetcher{http: &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+	return &fetcher{http: &http.Client{CheckRedirect: httpsOnly, Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
 		r = r.Clone(r.Context())
 		r.URL.Scheme, r.URL.Host = target.Scheme, target.Host
 		return http.DefaultTransport.RoundTrip(r)
@@ -121,18 +121,28 @@ func TestFetchErrors(t *testing.T) {
 	mux.HandleFunc("GET example.test/429", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTooManyRequests) })
 	mux.HandleFunc("GET example.test/503", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) })
 	mux.HandleFunc("GET example.test/big", func(w http.ResponseWriter, _ *http.Request) { w.Write(make([]byte, maxBody+1)) })
+	mux.HandleFunc("GET example.test/drop", func(w http.ResponseWriter, _ *http.Request) {
+		c, _, _ := w.(http.Hijacker).Hijack()
+		c.Close()
+	})
+	mux.HandleFunc("GET example.test/redir", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://example.test/ua", http.StatusFound)
+	})
 	mux.HandleFunc("GET example.test/ua", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(r.UserAgent())) })
 	f := sites(t, mux)
-	for path, retry := range map[string]bool{"404": false, "403": false, "429": true, "503": true, "big": false} {
-		_, err := f.get(context.Background(), "Example", "http://example.test/"+path)
+	for path, retry := range map[string]bool{"404": false, "403": false, "429": true, "503": true, "big": false, "drop": true, "redir": false} {
+		_, err := f.get(context.Background(), "Example", "https://example.test/"+path)
 		if e := rpcErr(t, err); e.Retryable() != retry {
 			t.Errorf("%s: retryable = %v, want %v (%v)", path, e.Retryable(), retry, err)
 		}
 	}
-	if _, err := f.get(context.Background(), "Example", "http://example.test/404"); !strings.Contains(err.Error(), "not found on Example") {
+	if _, err := f.get(context.Background(), "Example", "https://example.test/404"); !strings.Contains(err.Error(), "not found on Example") {
 		t.Errorf("404: err = %v", err)
 	}
-	if ua, err := f.get(context.Background(), "Example", "http://example.test/ua"); err != nil || string(ua) != "innkeeper-url-import/"+version {
+	if _, err := f.get(context.Background(), "Example", "http://example.test/ua"); err == nil || rpcErr(t, err).Retryable() {
+		t.Errorf("http URL: err = %v, want permanent refusal", err)
+	}
+	if ua, err := f.get(context.Background(), "Example", "https://example.test/ua"); err != nil || string(ua) != "innkeeper-url-import/"+version {
 		t.Errorf("User-Agent = %q, %v", ua, err)
 	}
 }
@@ -154,5 +164,17 @@ func TestWithSource(t *testing.T) {
 	}
 	if _, err := withSource(json.RawMessage(`{"data":{"source":"x"}}`), page); err == nil {
 		t.Error("a string source was accepted")
+	}
+}
+
+func TestBadAvatarKeepsDecoded(t *testing.T) {
+	var sent []any
+	err := emit(found{item: "https://chub.ai/characters/u/s", card: testdata(t, "v2-seraphina.png"), avatar: []byte("not an image")},
+		"1.1", t.TempDir(), func(_ string, p any) error { sent = append(sent, p); return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ev := emitted(t, append(sent, nil)); ev.Avatar == "" {
+		t.Error("the decoded avatar was dropped")
 	}
 }

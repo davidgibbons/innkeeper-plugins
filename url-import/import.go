@@ -98,10 +98,11 @@ func emit(got found, run, blobTmp string, notify notifyFunc) error {
 		return permanent(fmt.Errorf("%s: %w", got.item, err))
 	}
 	if got.avatar != nil {
-		if img, err = card.AsPNG(got.avatar); err != nil {
-			// The card matters more than its picture.
+		if png, err := card.AsPNG(got.avatar); err == nil {
+			img = png
+		} else {
+			// The card matters more than its picture; keep the one Decode returned.
 			log.Printf("%s: no avatar: %v", got.item, err)
-			img = nil
 		}
 	}
 	ev := protocol.EmitCard{Run: run, Item: got.item, Card: c}

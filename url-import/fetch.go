@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,14 +19,31 @@ const maxBody = pluginio.MaxInput
 // fetcher makes the plugin's requests to sites.
 type fetcher struct{ http *http.Client }
 
-func newFetcher() *fetcher { return &fetcher{http: &http.Client{Timeout: 30 * time.Second}} }
+func newFetcher() *fetcher {
+	return &fetcher{http: &http.Client{Timeout: 30 * time.Second, CheckRedirect: httpsOnly}}
+}
 
-// get fetches url. site names the site in errors. A 429, a 5xx, or a network
+// httpsOnly is a CheckRedirect that refuses a redirect off https.
+func httpsOnly(req *http.Request, via []*http.Request) error {
+	if req.URL.Scheme != "https" {
+		return http.ErrUseLastResponse // get reports the 3xx
+	}
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	return nil
+}
+
+// get fetches url, which must be https, including any URL a site's JSON
+// names. site names the site in errors. A 429, a 5xx, or a network
 // error is retryable, so the core re-queues the job.
 func (f *fetcher) get(ctx context.Context, site, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, permanent(fmt.Errorf("%s sent a bad URL: %w", site, err))
+	}
+	if req.URL.Scheme != "https" {
+		return nil, permanent(fmt.Errorf("%s: refusing non-https URL %s", site, req.URL.Redacted()))
 	}
 	// chub.ai blocks curl/ agents, and JanitorAI blocks Go's default.
 	req.Header.Set("User-Agent", "innkeeper-url-import/"+version)
