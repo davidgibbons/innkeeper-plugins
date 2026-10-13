@@ -41,6 +41,7 @@ var resolvers = map[string]resolver{
 	"characterhub.org":     chub,
 	"www.characterhub.org": chub,
 	"venus.chub.ai":        chub,
+	"character-tavern.com": tavern,
 	"janitorai.com":        janitor,
 	"www.janitorai.com":    janitor,
 	"realm.risuai.net":     risu,
