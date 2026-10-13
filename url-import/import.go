@@ -36,8 +36,13 @@ type resolver func(ctx context.Context, f *fetcher, u *url.URL) (found, error)
 
 // resolvers maps each lowercase host to its site's resolver.
 var resolvers = map[string]resolver{
-	"janitorai.com":     janitor,
-	"www.janitorai.com": janitor,
+	"chub.ai":              chub,
+	"www.chub.ai":          chub,
+	"characterhub.org":     chub,
+	"www.characterhub.org": chub,
+	"venus.chub.ai":        chub,
+	"janitorai.com":        janitor,
+	"www.janitorai.com":    janitor,
 }
 
 // janitor fails: anonymous requests get every definition field as null.
