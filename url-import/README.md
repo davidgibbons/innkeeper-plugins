@@ -5,7 +5,7 @@ are `{"url": "<page URL>"}`.
 
 | Site | Page URLs |
 |---|---|
-| chub.ai | `chub.ai/characters/{user}/{slug}`, `chub.ai/{user}/{slug}`, `chub.ai/lorebooks/{user}/{slug}`. `characterhub.org` and `venus.chub.ai` work too |
+| chub.ai | `chub.ai/characters/{user}/{slug}`, `chub.ai/{user}/{slug}`, `chub.ai/lorebooks/{user}/{slug}`. `characterhub.org`, `venus.chub.ai`, `www.chub.ai`, and `www.characterhub.org` work too |
 | RisuRealm | `realm.risuai.net/character/{uuid}` |
 | Character Tavern | `character-tavern.com/character/{author}/{slug}` |
 
