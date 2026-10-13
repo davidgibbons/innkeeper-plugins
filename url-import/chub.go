@@ -17,10 +17,10 @@ func chub(ctx context.Context, f *fetcher, u *url.URL) (found, error) {
 	if !ok {
 		return found{}, invalid(errors.New("a chub.ai URL looks like https://chub.ai/characters/{user}/{slug} or https://chub.ai/lorebooks/{user}/{slug}"))
 	}
-	item := "https://chub.ai/" + dir + "/" + ref
 	var meta struct {
 		Node struct {
 			ID         json.Number `json:"id"`
+			FullPath   string      `json:"fullPath"`
 			Name       string      `json:"name"`
 			MaxResURL  string      `json:"max_res_url"`
 			Definition struct {
@@ -31,6 +31,12 @@ func chub(ctx context.Context, f *fetcher, u *url.URL) (found, error) {
 	if err := f.getJSON(ctx, "chub.ai", chubAPI+"/api/"+dir+"/"+ref+"?full=true", &meta); err != nil {
 		return found{}, err
 	}
+	// The page URL may differ in case from chub's own path; name the card by
+	// chub's, so every spelling of the URL yields one item.
+	if p := strings.Split(meta.Node.FullPath, "/"); len(p) == 2 && segment(p[0]) && segment(p[1]) {
+		ref = url.PathEscape(p[0]) + "/" + url.PathEscape(p[1])
+	}
+	item := "https://chub.ai/" + dir + "/" + ref
 	if dir == "lorebooks" {
 		if lb := meta.Node.Definition.EmbeddedLorebook; len(lb) == 0 || string(lb) == "null" {
 			return found{}, permanent(errors.New("chub.ai sent no lorebook; its definition may be hidden"))

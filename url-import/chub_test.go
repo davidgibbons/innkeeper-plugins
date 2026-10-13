@@ -119,3 +119,22 @@ func TestChubAvatarOutage(t *testing.T) {
 		t.Fatalf("avatar 503: err = %v, want a retryable failure", err)
 	}
 }
+
+func TestChubCanonicalPath(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET api.chub.ai/api/characters/DG/Brakka", func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"node": {"id": 1, "fullPath": "dg/brakka", "name": "Brakka"}}`))
+	})
+	mux.HandleFunc("GET api.chub.ai/api/v4/projects/1/repository/files/card.json/raw", func(w http.ResponseWriter, _ *http.Request) {
+		w.Write(testdata(t, "v2-seraphina.json"))
+	})
+	sent, err := importURL(t, sites(t, mux), "https://chub.ai/characters/DG/Brakka")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev := emitted(t, sent)
+	const item = "https://chub.ai/characters/dg/brakka"
+	if ev.Item != item || !slices.Contains(sources(t, ev.Card), item) {
+		t.Errorf("item %q, source %q, want %q", ev.Item, sources(t, ev.Card), item)
+	}
+}
