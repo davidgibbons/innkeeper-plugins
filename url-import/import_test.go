@@ -194,3 +194,24 @@ func TestBadAvatarKeepsDecoded(t *testing.T) {
 		t.Error("the decoded avatar was dropped")
 	}
 }
+
+func TestRefusePrivate(t *testing.T) {
+	for addr, want := range map[string]bool{
+		"127.0.0.1:443": true, "10.0.0.1:443": true, "169.254.169.254:80": true,
+		"[::1]:443": true, "[::ffff:127.0.0.1]:443": true, "0.0.0.0:443": true,
+		"93.184.216.34:443": false,
+	} {
+		if err := refusePrivate("tcp", addr, nil); (err != nil) != want {
+			t.Errorf("%s: err = %v, want refused = %v", addr, err, want)
+		}
+	}
+}
+
+func TestGetRefusesPrivateHost(t *testing.T) {
+	srv := httptest.NewTLSServer(http.NotFoundHandler())
+	t.Cleanup(srv.Close)
+	_, err := newFetcher().get(context.Background(), "Example", srv.URL)
+	if e := rpcErr(t, err); e.Retryable() || !strings.Contains(e.Message, "refused to connect to a private address") {
+		t.Errorf("err = %v, want a permanent refusal", err)
+	}
+}

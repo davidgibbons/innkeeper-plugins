@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/netip"
+	"syscall"
 	"time"
 
 	"github.com/davidgibbons/innkeeper-plugins/internal/pluginio"
@@ -21,7 +24,26 @@ const maxBody = pluginio.MaxInput
 type fetcher struct{ http *http.Client }
 
 func newFetcher() *fetcher {
-	return &fetcher{http: &http.Client{Timeout: 30 * time.Second, CheckRedirect: httpsOnly}}
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.DialContext = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: refusePrivate}).DialContext
+	return &fetcher{http: &http.Client{Timeout: 30 * time.Second, CheckRedirect: httpsOnly, Transport: tr}}
+}
+
+var errPrivate = errors.New("refused to connect to a private address")
+
+// refusePrivate is a net.Dialer Control that stops a site's redirect or
+// avatar URL from reaching loopback, private, or link-local hosts. It runs
+// on the resolved IP, so DNS tricks don't get around it.
+func refusePrivate(_, address string, _ syscall.RawConn) error {
+	ap, err := netip.ParseAddrPort(address)
+	if err != nil {
+		return err
+	}
+	ip := ap.Addr().Unmap()
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
+		return errPrivate
+	}
+	return nil
 }
 
 // httpsOnly is a CheckRedirect that refuses a redirect off https.
@@ -52,6 +74,9 @@ func (f *fetcher) get(ctx context.Context, site, url string) ([]byte, error) {
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
+		}
+		if errors.Is(err, errPrivate) {
+			return nil, permanent(fmt.Errorf("%s: %w", site, errPrivate))
 		}
 		return nil, retryable(fmt.Errorf("%s: %w", site, err))
 	}
