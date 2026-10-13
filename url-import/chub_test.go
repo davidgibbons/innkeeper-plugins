@@ -87,3 +87,18 @@ func TestChubBadPaths(t *testing.T) {
 		t.Errorf("missing card: err = %v, want not retryable", err)
 	}
 }
+
+func TestChubAvatarGone(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET api.chub.ai/api/characters/u/seraphina", func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"node": {"id": 1, "max_res_url": "https://avatars.charhub.io/gone.png"}}`))
+	})
+	mux.HandleFunc("GET api.chub.ai/api/v4/projects/1/repository/files/card.json/raw", func(w http.ResponseWriter, _ *http.Request) {
+		w.Write(testdata(t, "v2-seraphina.json"))
+	})
+	sent, err := importURL(t, sites(t, mux), "https://chub.ai/characters/u/seraphina")
+	if err != nil {
+		t.Fatalf("avatar 404 lost the card: %v", err)
+	}
+	emitted(t, sent)
+}

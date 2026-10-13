@@ -46,7 +46,7 @@ func chub(ctx context.Context, f *fetcher, u *url.URL) (found, error) {
 	}
 	got := found{item: item, card: b}
 	if meta.Node.MaxResURL != "" {
-		if got.avatar, err = f.get(ctx, "chub.ai", meta.Node.MaxResURL); err != nil {
+		if got.avatar, err = f.getAvatar(ctx, "chub.ai", meta.Node.MaxResURL); err != nil {
 			return found{}, err
 		}
 	}

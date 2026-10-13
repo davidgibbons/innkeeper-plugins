@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -56,6 +57,9 @@ func (f *fetcher) get(ctx context.Context, site, url string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	switch {
+	case resp.StatusCode/100 == 3 && resp.Header.Get("Location") != "":
+		// httpsOnly stopped a redirect; Go follows the rest.
+		return nil, permanent(fmt.Errorf("%s redirected off https to %s", site, resp.Header.Get("Location")))
 	case resp.StatusCode == http.StatusNotFound:
 		return nil, permanent(fmt.Errorf("not found on %s", site))
 	case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500:
@@ -69,6 +73,21 @@ func (f *fetcher) get(ctx context.Context, site, url string) ([]byte, error) {
 	}
 	if len(b) > maxBody {
 		return nil, permanent(fmt.Errorf("%s sent over %d MiB", site, maxBody>>20))
+	}
+	return b, nil
+}
+
+// getAvatar fetches a card's picture. The card matters more than its
+// picture, so a permanent failure logs and returns nil, which keeps the
+// avatar card.Decode supplies; a retryable one fails the run.
+func (f *fetcher) getAvatar(ctx context.Context, site, url string) ([]byte, error) {
+	b, err := f.get(ctx, site, url)
+	var perr *protocol.Error
+	if err != nil && (!errors.As(err, &perr) || perr.Retryable() || ctx.Err() != nil) {
+		return nil, err
+	}
+	if err != nil {
+		log.Printf("%s: no avatar: %v", url, err)
 	}
 	return b, nil
 }

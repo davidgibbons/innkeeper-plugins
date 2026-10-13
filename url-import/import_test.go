@@ -29,6 +29,7 @@ func sites(t *testing.T, mux *http.ServeMux) *fetcher {
 	target, _ := url.Parse(srv.URL)
 	return &fetcher{http: &http.Client{CheckRedirect: httpsOnly, Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
 		r = r.Clone(r.Context())
+		r.Host = r.URL.Host // a followed redirect leaves Host empty
 		r.URL.Scheme, r.URL.Host = target.Scheme, target.Host
 		return http.DefaultTransport.RoundTrip(r)
 	})}}
@@ -128,6 +129,9 @@ func TestFetchErrors(t *testing.T) {
 	mux.HandleFunc("GET example.test/redir", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "http://example.test/ua", http.StatusFound)
 	})
+	mux.HandleFunc("GET example.test/hop", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://example.test/ua", http.StatusFound)
+	})
 	mux.HandleFunc("GET example.test/ua", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(r.UserAgent())) })
 	f := sites(t, mux)
 	for path, retry := range map[string]bool{"404": false, "403": false, "429": true, "503": true, "big": false, "drop": true, "redir": false} {
@@ -141,6 +145,12 @@ func TestFetchErrors(t *testing.T) {
 	}
 	if _, err := f.get(context.Background(), "Example", "http://example.test/ua"); err == nil || rpcErr(t, err).Retryable() {
 		t.Errorf("http URL: err = %v, want permanent refusal", err)
+	}
+	if _, err := f.get(context.Background(), "Example", "https://example.test/redir"); err == nil || !strings.Contains(err.Error(), "Example redirected off https to http://example.test/ua") {
+		t.Errorf("redirect off https: err = %v", err)
+	}
+	if ua, err := f.get(context.Background(), "Example", "https://example.test/hop"); err != nil || len(ua) == 0 {
+		t.Errorf("https redirect: %q, %v", ua, err)
 	}
 	if ua, err := f.get(context.Background(), "Example", "https://example.test/ua"); err != nil || string(ua) != "innkeeper-url-import/"+version {
 		t.Errorf("User-Agent = %q, %v", ua, err)
