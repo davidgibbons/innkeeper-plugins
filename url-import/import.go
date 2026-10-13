@@ -43,6 +43,7 @@ var resolvers = map[string]resolver{
 	"venus.chub.ai":        chub,
 	"janitorai.com":        janitor,
 	"www.janitorai.com":    janitor,
+	"realm.risuai.net":     risu,
 }
 
 // janitor fails: anonymous requests get every definition field as null.
