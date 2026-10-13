@@ -64,3 +64,20 @@ func TestCharXRejects(t *testing.T) {
 		}
 	}
 }
+
+func TestCharXWithPrefix(t *testing.T) {
+	golden, err := os.ReadFile("testdata/v3-mirelle.charx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _, err := Decode(golden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// RisuRealm serves CharX as a JPEG with the zip appended.
+	in := append([]byte("\xff\xd8\xff\xe0 a JPEG goes here"), golden...)
+	card, img, err := Decode(in)
+	if err != nil || !bytes.Equal(card, want) || !isPNG(img) {
+		t.Fatalf("err %v, card %.80s, avatar %.8q", err, card, img)
+	}
+}
