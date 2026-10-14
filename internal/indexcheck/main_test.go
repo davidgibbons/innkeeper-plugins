@@ -29,6 +29,8 @@ func TestCheckFindsProblems(t *testing.T) {
 	write("b/plugin.toml", fmt.Sprintf(manifest, "b", "./b"))
 	write("c/plugin.toml", fmt.Sprintf(manifest, "c", "./other"))
 	write("index.toml", `
+categories = ["Apps"]
+
 [[plugin]]
 name = "a"
 path = "a"
@@ -53,9 +55,9 @@ protocol = 1
 capabilities = ["push"]
 description = "No folder."
 `)
-	// a's version, c's command, gone's folder, and b missing from the index.
-	if errs := check(root); len(errs) != 4 {
-		t.Fatalf("got %d problems, want 4: %v", len(errs), errs)
+	// a's version, c's command, gone's folder, b missing from the index, and no plugin in Apps.
+	if errs := check(root); len(errs) != 5 {
+		t.Fatalf("got %d problems, want 5: %v", len(errs), errs)
 	}
 }
 

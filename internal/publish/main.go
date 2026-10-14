@@ -4,7 +4,8 @@
 //
 //	go run ./internal/publish -out dist -url https://github.com/<owner>/<repo>/releases/download card-codec
 //
-// With -categorize it instead updates a published index's categories in place.
+// With -categorize it instead updates a published index's categories and
+// recommended plugins in place.
 package main
 
 import (
@@ -43,6 +44,7 @@ type entry struct {
 	Name         string     `toml:"name"`
 	Path         string     `toml:"path,omitempty"`
 	Category     string     `toml:"category,omitempty"`
+	Recommended  bool       `toml:"recommended,omitempty"`
 	Version      string     `toml:"version"`
 	Released     string     `toml:"released,omitempty"`
 	Protocol     int        `toml:"protocol"`
@@ -54,7 +56,7 @@ type entry struct {
 func main() {
 	out := flag.String("out", "dist", "folder to write releases into, one subfolder per tag")
 	base := flag.String("url", "", "release download URL, up to /releases/download")
-	categorized := flag.String("categorize", "", "published index to update with index.toml's categories")
+	categorized := flag.String("categorize", "", "published index to update with index.toml's categories and recommended plugins")
 	flag.Parse()
 	if *categorized != "" {
 		if err := categorize(".", *categorized); err != nil {
@@ -126,12 +128,13 @@ func publish(root, out, base, folder string) (string, error) {
 	return tag, toml.NewEncoder(f).Encode(map[string][]entry{"plugin": {*e}})
 }
 
-// categorize sets each plugin's category in the published index at path from
-// index.toml. A category belongs to the plugin, not a version, and a release's
-// entry.toml is never rebuilt.
+// categorize sets the published index at path's category order, and each
+// plugin's category and recommended mark, from index.toml. They belong to the
+// plugin, not a version, and a release's entry.toml is never rebuilt.
 func categorize(root, path string) error {
 	var repo, published struct {
-		Plugin []entry `toml:"plugin"`
+		Categories []string `toml:"categories,omitempty"`
+		Plugin     []entry  `toml:"plugin"`
 	}
 	if _, err := toml.DecodeFile(filepath.Join(root, "index.toml"), &repo); err != nil {
 		return err
@@ -139,13 +142,15 @@ func categorize(root, path string) error {
 	if _, err := toml.DecodeFile(path, &published); err != nil {
 		return err
 	}
-	category := map[string]string{}
+	published.Categories = repo.Categories
+	byName := map[string]entry{}
 	for _, e := range repo.Plugin {
-		category[e.Name] = e.Category
+		byName[e.Name] = e
 	}
 	for i, e := range published.Plugin {
-		if c, ok := category[e.Name]; ok {
-			published.Plugin[i].Category = c
+		if r, ok := byName[e.Name]; ok {
+			published.Plugin[i].Category = r.Category
+			published.Plugin[i].Recommended = r.Recommended
 		}
 	}
 	f, err := os.Create(path)

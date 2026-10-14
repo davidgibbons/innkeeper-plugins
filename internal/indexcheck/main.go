@@ -18,6 +18,7 @@ type entry struct {
 	Name         string   `toml:"name"`
 	Path         string   `toml:"path"`
 	Category     string   `toml:"category"`
+	Recommended  bool     `toml:"recommended"`
 	Version      string   `toml:"version"`
 	Protocol     int      `toml:"protocol"`
 	Capabilities []string `toml:"capabilities"`
@@ -37,7 +38,8 @@ func main() {
 // check returns every problem with the index in the repo at root.
 func check(root string) []error {
 	var index struct {
-		Plugin []entry `toml:"plugin"`
+		Categories []string `toml:"categories"`
+		Plugin     []entry  `toml:"plugin"`
 	}
 	md, err := toml.DecodeFile(filepath.Join(root, "index.toml"), &index)
 	if err != nil {
@@ -71,6 +73,11 @@ func check(root string) []error {
 		}
 		if e.Description == "" {
 			errs = append(errs, fmt.Errorf("%s: description is required", e.Path))
+		}
+	}
+	for _, c := range index.Categories {
+		if !slices.ContainsFunc(index.Plugin, func(e entry) bool { return e.Category == c }) {
+			errs = append(errs, fmt.Errorf("categories: no plugin is in %q", c))
 		}
 	}
 	dirs, err := os.ReadDir(root)

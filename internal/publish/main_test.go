@@ -72,6 +72,10 @@ name = "password-login"
 version = "0.1.0"
 
 [[plugin]]
+name = "lumiverse"
+version = "0.1.0"
+
+[[plugin]]
 name = "retired"
 category = "Old"
 version = "0.1.0"
@@ -83,12 +87,19 @@ version = "0.1.0"
 		t.Fatal(err)
 	}
 	var index struct {
-		Plugin []entry `toml:"plugin"`
+		Categories []string `toml:"categories"`
+		Plugin     []entry  `toml:"plugin"`
 	}
 	if _, err := toml.DecodeFile(path, &index); err != nil {
 		t.Fatal(err)
 	}
-	if len(index.Plugin) != 2 || index.Plugin[0].Category != "Login" || index.Plugin[1].Category != "Old" {
+	if len(index.Plugin) != 3 || index.Plugin[0].Category != "Login" || index.Plugin[2].Category != "Old" {
 		t.Fatalf("index = %+v", index.Plugin)
+	}
+	if index.Plugin[0].Recommended || !index.Plugin[1].Recommended {
+		t.Fatalf("recommended: %+v", index.Plugin)
+	}
+	if !slices.Equal(index.Categories, []string{"Apps", "Import", "Login"}) {
+		t.Fatalf("categories = %v", index.Categories)
 	}
 }
