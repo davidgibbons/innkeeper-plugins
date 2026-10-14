@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/davidgibbons/innkeeper/protocol"
 )
 
 func TestPublish(t *testing.T) {
@@ -101,5 +103,29 @@ version = "0.1.0"
 	}
 	if !slices.Equal(index.Categories, []string{"Apps", "Import", "Login"}) {
 		t.Fatalf("categories = %v", index.Categories)
+	}
+}
+
+func TestTarballCarriesIcon(t *testing.T) {
+	m, err := protocol.LoadManifest("../../sillytavern")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := tarball("../..", "sillytavern", m, "linux", "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gz, err := gzip.NewReader(bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	tr := tar.NewReader(gz)
+	for h, err := tr.Next(); err == nil; h, err = tr.Next() {
+		names = append(names, h.Name)
+	}
+	slices.Sort(names)
+	if !slices.Equal(names, []string{"icon.svg", "plugin.toml", "sillytavern"}) {
+		t.Fatalf("tarball holds %v", names)
 	}
 }

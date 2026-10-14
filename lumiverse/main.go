@@ -14,7 +14,7 @@ import (
 	"github.com/davidgibbons/innkeeper/protocol"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 type plugin struct {
 	c       *client

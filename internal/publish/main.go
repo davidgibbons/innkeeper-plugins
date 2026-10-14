@@ -162,9 +162,12 @@ func categorize(root, path string) error {
 }
 
 // tarball builds folder for one platform and packs the binary with its
-// plugin.toml.
+// plugin.toml and icon.
 func tarball(root, folder string, m *protocol.Manifest, goos, goarch string) ([]byte, error) {
 	files := map[string]string{"plugin.toml": filepath.Join(root, folder, "plugin.toml")}
+	if m.Icon != "" {
+		files[m.Icon] = filepath.Join(root, folder, m.Icon)
+	}
 	if len(m.Command) > 0 {
 		bin := filepath.Join(os.TempDir(), fmt.Sprintf("publish-%s-%s-%s", folder, goos, goarch))
 		defer os.Remove(bin)

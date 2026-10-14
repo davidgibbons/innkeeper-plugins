@@ -5,8 +5,8 @@ github.com/danielgtaylor/huma/v2 v2.39.1/go.mod h1:zcnQ38duIJ3VUHwFaBoZ6x8T+KN/m
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/davidgibbons/innkeeper v1.0.1-0.20261014035912-579f9429b096 h1:qjEwoutrMEY6zfcscNOKpx0d1CS6hGKx9F/OjuBpf7A=
-github.com/davidgibbons/innkeeper v1.0.1-0.20261014035912-579f9429b096/go.mod h1:SQlQfj5ZUzEPBSA1hAeZ0TbTwimoydy/b3uhMWNq04E=
+github.com/davidgibbons/innkeeper v1.0.1-0.20261014063510-5e9d2a2dcb41 h1:0jgY+Lowc/O5YJ2caqr7/ivRQC5+qOITGJQoPnvPhyA=
+github.com/davidgibbons/innkeeper v1.0.1-0.20261014063510-5e9d2a2dcb41/go.mod h1:SQlQfj5ZUzEPBSA1hAeZ0TbTwimoydy/b3uhMWNq04E=
 github.com/devsisters/go-diff3 v0.0.0-20250819115249-1cdef3ea7ce0 h1:gnVPb2qHzpSz4wBlJdANgGlgOkmUEoDmmpc0IBBB3V8=
 github.com/devsisters/go-diff3 v0.0.0-20250819115249-1cdef3ea7ce0/go.mod h1:0BbqWY/IZ4sX/HuB/dUuUYCF6sxC288Nxm1MIqHlS/8=
 github.com/fxamacker/cbor/v2 v2.9.2 h1:X4Ksno9+x3cz0TZv69ec1hxP/+tymuR8PXQJyDwfh78=
