@@ -14,7 +14,7 @@ import (
 	"github.com/davidgibbons/innkeeper/protocol"
 )
 
-const version = "0.1.1"
+const version = "0.2.0"
 
 func main() {
 	// Set by initialize; requests run on other goroutines.
@@ -30,7 +30,7 @@ func main() {
 			}
 			blobTmp.Store(&p.BlobTmp)
 			return protocol.InitializeResult{Protocol: protocol.Version, Name: "url-import", Version: version,
-				Capabilities: []string{"import"}}, nil
+				Capabilities: []string{"import", "sites"}}, nil
 		case protocol.MethodShutdown:
 			return nil, nil
 		case protocol.MethodImportRun:

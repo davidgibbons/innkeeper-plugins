@@ -9,9 +9,13 @@ are `{"url": "<page URL>"}`.
 | RisuRealm | `realm.risuai.net/character/{uuid}` |
 | Character Tavern | `character-tavern.com/character/{author}/{slug}` |
 
-The card's page URL is added to its `data.source`, so the library links the
-card to its page. Importing the same URL again adds nothing unless the card
-changed.
+The card's page URL is added to its `data.source`. Importing the same URL
+again adds nothing unless the card changed.
+
+It is also a `sites` plugin: it reads these sites' pages from a card's or
+lorebook's `extensions.chub` and `data.source`, so the library links each
+item to its pages however it was imported. It needs a core with the `sites`
+capability; an older core refuses to load it, imports included.
 
 A card whose definition the site hides fails to import. JanitorAI needs a
 login, so it isn't supported, and neither are private chub.ai cards.
