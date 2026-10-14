@@ -124,5 +124,9 @@ func chubData(data map[string]any, lorebook bool) (protocol.Source, bool) {
 	case string:
 		s.ExternalID = id
 	}
+	// Core drops a source whose ID is too long; the page alone is still worth keeping.
+	if len(s.ExternalID) > 128 {
+		s.ExternalID = ""
+	}
 	return s, true
 }

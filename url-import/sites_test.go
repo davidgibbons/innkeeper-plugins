@@ -52,6 +52,7 @@ func TestDetect(t *testing.T) {
 		{"card", sample, false, &protocol.Source{Kind: "chub", Ref: "frerena/the-demon-of-desire-6bf0cd2c0915", ExternalID: "3604386", URL: "https://chub.ai/characters/frerena/the-demon-of-desire-6bf0cd2c0915"}},
 		{"lorebook", sample, true, &protocol.Source{Kind: "chub", Ref: "frerena/the-demon-of-desire-6bf0cd2c0915", ExternalID: "3604386", URL: "https://chub.ai/lorebooks/frerena/the-demon-of-desire-6bf0cd2c0915"}},
 		{"large id", `{"extensions":{"chub":{"id":12345678901234567,"full_path":"a/b"}}}`, false, &protocol.Source{Kind: "chub", Ref: "a/b", ExternalID: "12345678901234567", URL: "https://chub.ai/characters/a/b"}},
+		{"overlong id", `{"extensions":{"chub":{"id":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","full_path":"a/b"}}}`, false, &protocol.Source{Kind: "chub", Ref: "a/b", URL: "https://chub.ai/characters/a/b"}},
 		{"no id", `{"extensions":{"chub":{"full_path":"a/b"}}}`, false, &protocol.Source{Kind: "chub", Ref: "a/b", URL: "https://chub.ai/characters/a/b"}},
 		{"empty path", `{"extensions":{"chub":{"id":1,"full_path":""}}}`, false, nil},
 		{"no extensions", `{"name":"x"}`, false, nil},
