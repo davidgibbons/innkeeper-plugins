@@ -1,6 +1,9 @@
 # One [[plugin]] entry per plugin folder. Format: innkeeper core design spec,
 # "Plugin repository".
 
+# The setup wizard shows these categories first, in this order.
+categories = ["Apps", "Import", "Login"]
+
 [[plugin]]
 name = "card-codec"
 category = "Formats"
@@ -22,6 +25,7 @@ description = "Log in as the owner with one password."
 [[plugin]]
 name = "card-import"
 category = "Import"
+recommended = true
 path = "card-import"
 version = "0.2.1"
 protocol = 1
@@ -31,6 +35,7 @@ description = "Import character cards and lorebooks from a folder or an uploaded
 [[plugin]]
 name = "lumiverse"
 category = "Apps"
+recommended = true
 path = "lumiverse"
 version = "0.1.0"
 protocol = 1
@@ -40,6 +45,7 @@ description = "Push cards and lorebooks to a Lumiverse server as characters and 
 [[plugin]]
 name = "sillytavern"
 category = "Apps"
+recommended = true
 path = "sillytavern"
 version = "0.1.0"
 protocol = 1
