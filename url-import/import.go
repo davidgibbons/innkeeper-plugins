@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/davidgibbons/innkeeper-plugins/card"
 	"github.com/davidgibbons/innkeeper-plugins/internal/pluginio"
@@ -150,4 +151,17 @@ func withSource(c json.RawMessage, page string) (json.RawMessage, error) {
 }
 
 // segment reports whether s can stand as one path segment of a site URL.
-func segment(s string) bool { return s != "" && s != "." && s != ".." }
+// Core stores refs unescaped, so a ref must not smuggle in a query, a fragment, or blank space.
+func segment(s string) bool {
+	return s != "" && s != "." && s != ".." && !strings.ContainsAny(s, "?#\\") &&
+		strings.IndexFunc(s, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) < 0
+}
+
+// pathRef splits ref, exactly {a}/{b}, into its segments.
+func pathRef(ref string) (a, b string, ok bool) {
+	a, b, ok = strings.Cut(ref, "/")
+	if !ok || !segment(a) || !segment(b) || strings.Contains(b, "/") {
+		return "", "", false
+	}
+	return a, b, true
+}

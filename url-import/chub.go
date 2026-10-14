@@ -13,7 +13,7 @@ const chubAPI = "https://api.chub.ai"
 // chub resolves chub.ai and characterhub.org pages. The card it fetches
 // already carries extensions.chub, which the core's chub detector reads.
 func chub(ctx context.Context, f *fetcher, u *url.URL) (found, error) {
-	dir, ref, ok := chubPath(u.Path)
+	dir, user, slug, ok := chubPage(u.Path)
 	if !ok {
 		return found{}, invalid(errors.New("a chub.ai URL looks like https://chub.ai/characters/{user}/{slug} or https://chub.ai/lorebooks/{user}/{slug}"))
 	}
@@ -28,15 +28,15 @@ func chub(ctx context.Context, f *fetcher, u *url.URL) (found, error) {
 			} `json:"definition"`
 		} `json:"node"`
 	}
-	if err := f.getJSON(ctx, "chub.ai", chubAPI+"/api/"+dir+"/"+ref+"?full=true", &meta); err != nil {
+	if err := f.getJSON(ctx, "chub.ai", chubAPI+"/api/"+dir+"/"+url.PathEscape(user)+"/"+url.PathEscape(slug)+"?full=true", &meta); err != nil {
 		return found{}, err
 	}
 	// The page URL may differ in case from chub's own path; name the card by
 	// chub's, so every spelling of the URL yields one item.
-	if p := strings.Split(meta.Node.FullPath, "/"); len(p) == 2 && segment(p[0]) && segment(p[1]) {
-		ref = url.PathEscape(p[0]) + "/" + url.PathEscape(p[1])
+	if a, b, ok := pathRef(meta.Node.FullPath); ok {
+		user, slug = a, b
 	}
-	item := "https://chub.ai/" + dir + "/" + ref
+	item := chubURL(dir, user, slug)
 	if dir == "lorebooks" {
 		if lb := meta.Node.Definition.EmbeddedLorebook; len(lb) == 0 || string(lb) == "null" {
 			return found{}, permanent(errors.New("chub.ai sent no lorebook; its definition may be hidden"))
@@ -59,9 +59,9 @@ func chub(ctx context.Context, f *fetcher, u *url.URL) (found, error) {
 	return got, nil
 }
 
-// chubPath reads /characters/{user}/{slug}, /lorebooks/{user}/{slug}, or
-// /{user}/{slug}, a character. ref is {user}/{slug}, path-escaped.
-func chubPath(p string) (dir, ref string, ok bool) {
+// chubPage reads /characters/{user}/{slug}, /lorebooks/{user}/{slug}, or
+// /{user}/{slug}, a character. user and slug are unescaped.
+func chubPage(p string) (dir, user, slug string, ok bool) {
 	parts := strings.Split(strings.Trim(p, "/"), "/")
 	switch {
 	case len(parts) == 3 && (parts[0] == "characters" || parts[0] == "lorebooks"):
@@ -69,10 +69,15 @@ func chubPath(p string) (dir, ref string, ok bool) {
 	case len(parts) == 2 && parts[0] != "characters" && parts[0] != "lorebooks":
 		dir = "characters"
 	default:
-		return "", "", false
+		return "", "", "", false
 	}
 	if !segment(parts[0]) || !segment(parts[1]) {
-		return "", "", false
+		return "", "", "", false
 	}
-	return dir, url.PathEscape(parts[0]) + "/" + url.PathEscape(parts[1]), true
+	return dir, parts[0], parts[1], true
+}
+
+// chubURL is the canonical page of a chub card or lorebook.
+func chubURL(dir, user, slug string) string {
+	return "https://chub.ai/" + dir + "/" + url.PathEscape(user) + "/" + url.PathEscape(slug)
 }

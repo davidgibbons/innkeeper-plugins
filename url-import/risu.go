@@ -20,8 +20,8 @@ var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
 // risu resolves RisuRealm pages. The card it fetches already says
 // risurealm:{uuid} in data.source.
 func risu(ctx context.Context, f *fetcher, u *url.URL) (found, error) {
-	id, ok := strings.CutPrefix(strings.TrimSuffix(u.Path, "/"), "/character/")
-	if id = strings.ToLower(id); !ok || !uuidPattern.MatchString(id) {
+	id, ok := risuPage(u.Path)
+	if !ok {
 		return found{}, invalid(errors.New("a RisuRealm URL looks like https://realm.risuai.net/character/{uuid}"))
 	}
 	item := risuRealm + "/character/" + id
@@ -42,6 +42,13 @@ func risu(ctx context.Context, f *fetcher, u *url.URL) (found, error) {
 		}
 	}
 	return found{}, permanent(errors.New("RisuRealm sent no card data"))
+}
+
+// risuPage reads /character/{uuid}. id is lowercase.
+func risuPage(p string) (id string, ok bool) {
+	id, ok = strings.CutPrefix(strings.TrimSuffix(p, "/"), "/character/")
+	id = strings.ToLower(id)
+	return id, ok && uuidPattern.MatchString(id)
 }
 
 // risuCard reads card.type and card.img from one node's devalue data.

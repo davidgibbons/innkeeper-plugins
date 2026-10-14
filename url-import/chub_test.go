@@ -77,6 +77,8 @@ func TestChubBadPaths(t *testing.T) {
 		"https://chub.ai/characters/onlyone",
 		"https://chub.ai/characters/a/b/c",
 		"https://chub.ai/characters/../b",
+		"https://chub.ai/characters/a/b%20c",
+		"https://chub.ai/characters/a/b%3Fx",
 		"https://chub.ai/",
 	} {
 		if _, err := importURL(t, f, page); rpcErr(t, err).Code != protocol.CodeInvalidParams {
