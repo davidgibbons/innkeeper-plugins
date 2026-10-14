@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/url"
 	"strings"
+
+	"github.com/davidgibbons/innkeeper/protocol"
 )
 
 const tavernCards = "https://ct-cards.storage.character-tavern.com/"
@@ -33,4 +35,21 @@ func tavernPage(p string) (author, slug string, ok bool) {
 // tavernURL is the canonical page of a Character Tavern card.
 func tavernURL(author, slug string) string {
 	return "https://character-tavern.com/character/" + url.PathEscape(author) + "/" + url.PathEscape(slug)
+}
+
+// tavernSource is the source for ref {author}/{slug}. Character Tavern has no lorebook pages.
+func tavernSource(ref string, lorebook bool) (protocol.Source, bool) {
+	author, slug, ok := pathRef(ref)
+	if lorebook || !ok {
+		return protocol.Source{}, false
+	}
+	return protocol.Source{Kind: "character-tavern", Ref: ref, URL: tavernURL(author, slug)}, true
+}
+
+func tavernPageSource(p string) (protocol.Source, bool) {
+	author, slug, ok := tavernPage(p)
+	if !ok {
+		return protocol.Source{}, false
+	}
+	return tavernSource(author+"/"+slug, false)
 }

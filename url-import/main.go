@@ -1,5 +1,6 @@
 // Command url-import is an import plugin. It imports one card or lorebook
-// from its page on a public site, such as chub.ai.
+// from its page on a public site, such as chub.ai, and is a sites plugin for
+// the same sites.
 package main
 
 import (
@@ -38,6 +39,10 @@ func main() {
 				return nil, errors.New("import.run before initialize")
 			}
 			return run(ctx, f, *tmp, conn.Notify, params)
+		case protocol.MethodSitesDetect:
+			return detectSources(params)
+		case protocol.MethodSitesParse:
+			return parseSource(params)
 		}
 		return nil, protocol.MethodNotFound(method)
 	}

@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/davidgibbons/innkeeper/protocol"
 )
 
 const (
@@ -24,7 +26,7 @@ func risu(ctx context.Context, f *fetcher, u *url.URL) (found, error) {
 	if !ok {
 		return found{}, invalid(errors.New("a RisuRealm URL looks like https://realm.risuai.net/character/{uuid}"))
 	}
-	item := risuRealm + "/character/" + id
+	item := risuURL(id)
 	var page struct {
 		Nodes []*struct {
 			Data []json.RawMessage `json:"data"`
@@ -49,6 +51,25 @@ func risuPage(p string) (id string, ok bool) {
 	id, ok = strings.CutPrefix(strings.TrimSuffix(p, "/"), "/character/")
 	id = strings.ToLower(id)
 	return id, ok && uuidPattern.MatchString(id)
+}
+
+func risuURL(id string) string { return risuRealm + "/character/" + id }
+
+// risuSource is the source for a card's UUID. RisuRealm has no lorebook pages.
+func risuSource(ref string, lorebook bool) (protocol.Source, bool) {
+	ref = strings.ToLower(ref)
+	if lorebook || !uuidPattern.MatchString(ref) {
+		return protocol.Source{}, false
+	}
+	return protocol.Source{Kind: "risu", Ref: ref, URL: risuURL(ref)}, true
+}
+
+func risuPageSource(p string) (protocol.Source, bool) {
+	id, ok := risuPage(p)
+	if !ok {
+		return protocol.Source{}, false
+	}
+	return risuSource(id, false)
 }
 
 // risuCard reads card.type and card.img from one node's devalue data.

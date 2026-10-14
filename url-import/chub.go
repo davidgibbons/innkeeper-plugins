@@ -6,12 +6,14 @@ import (
 	"errors"
 	"net/url"
 	"strings"
+
+	"github.com/davidgibbons/innkeeper/protocol"
 )
 
 const chubAPI = "https://api.chub.ai"
 
 // chub resolves chub.ai and characterhub.org pages. The card it fetches
-// already carries extensions.chub, which the core's chub detector reads.
+// already carries extensions.chub, which chubData reads.
 func chub(ctx context.Context, f *fetcher, u *url.URL) (found, error) {
 	dir, user, slug, ok := chubPage(u.Path)
 	if !ok {
@@ -80,4 +82,47 @@ func chubPage(p string) (dir, user, slug string, ok bool) {
 // chubURL is the canonical page of a chub card or lorebook.
 func chubURL(dir, user, slug string) string {
 	return "https://chub.ai/" + dir + "/" + url.PathEscape(user) + "/" + url.PathEscape(slug)
+}
+
+func chubDir(lorebook bool) string {
+	if lorebook {
+		return "lorebooks"
+	}
+	return "characters"
+}
+
+// chubSource is the source for ref {user}/{slug}, on the page for the entity.
+func chubSource(ref string, lorebook bool) (protocol.Source, bool) {
+	user, slug, ok := pathRef(ref)
+	if !ok {
+		return protocol.Source{}, false
+	}
+	return protocol.Source{Kind: "chub", Ref: ref, URL: chubURL(chubDir(lorebook), user, slug)}, true
+}
+
+func chubPageSource(p string) (protocol.Source, bool) {
+	dir, user, slug, ok := chubPage(p)
+	if !ok {
+		return protocol.Source{}, false
+	}
+	return chubSource(user+"/"+slug, dir == "lorebooks")
+}
+
+// chubData reads extensions.chub, which chub's own cards and lorebooks carry.
+func chubData(data map[string]any, lorebook bool) (protocol.Source, bool) {
+	ext, _ := data["extensions"].(map[string]any)
+	c, _ := ext["chub"].(map[string]any)
+	path, _ := c["full_path"].(string)
+	s, ok := chubSource(path, lorebook)
+	if !ok {
+		return protocol.Source{}, false
+	}
+	// data is decoded with UseNumber, which keeps big IDs out of float formatting.
+	switch id := c["id"].(type) {
+	case json.Number:
+		s.ExternalID = id.String()
+	case string:
+		s.ExternalID = id
+	}
+	return s, true
 }

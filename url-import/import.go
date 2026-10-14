@@ -35,17 +35,24 @@ type found struct {
 // resolver fetches the card or lorebook on the page u.
 type resolver func(ctx context.Context, f *fetcher, u *url.URL) (found, error)
 
-// resolvers maps each lowercase host to its site's resolver.
-var resolvers = map[string]resolver{
-	"chub.ai":              chub,
-	"www.chub.ai":          chub,
-	"characterhub.org":     chub,
-	"www.characterhub.org": chub,
-	"venus.chub.ai":        chub,
-	"character-tavern.com": tavern,
-	"janitorai.com":        janitor,
-	"www.janitorai.com":    janitor,
-	"realm.risuai.net":     risu,
+// site is how url-import reads one site's pages.
+type site struct {
+	resolve resolver
+	// source reads a page's path as its source; nil when the site's pages aren't sources.
+	source func(path string) (protocol.Source, bool)
+}
+
+// hosts maps each lowercase host to its site.
+var hosts = map[string]site{
+	"chub.ai":              {chub, chubPageSource},
+	"www.chub.ai":          {chub, chubPageSource},
+	"characterhub.org":     {chub, chubPageSource},
+	"www.characterhub.org": {chub, chubPageSource},
+	"venus.chub.ai":        {chub, chubPageSource},
+	"character-tavern.com": {tavern, tavernPageSource},
+	"janitorai.com":        {resolve: janitor},
+	"www.janitorai.com":    {resolve: janitor},
+	"realm.risuai.net":     {risu, risuPageSource},
 }
 
 // janitor fails: anonymous requests get every definition field as null.
@@ -72,11 +79,11 @@ func run(ctx context.Context, f *fetcher, blobTmp string, notify notifyFunc, raw
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
 		return nil, invalid(fmt.Errorf("params: url %q is not an http or https URL", ps.URL))
 	}
-	resolve, ok := resolvers[strings.ToLower(u.Hostname())]
+	site, ok := hosts[strings.ToLower(u.Hostname())]
 	if !ok {
 		return nil, invalid(fmt.Errorf("no importer for %s", u.Hostname()))
 	}
-	got, err := resolve(ctx, f, u)
+	got, err := site.resolve(ctx, f, u)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +129,7 @@ func emit(got found, run, blobTmp string, notify notifyFunc) error {
 	return notify(protocol.NotifyEmitCard, ev)
 }
 
-// withSource appends page to the CCv3 card's data.source, which core detection reads.
+// withSource appends page to the CCv3 card's data.source, which sites.detect reads.
 func withSource(c json.RawMessage, page string) (json.RawMessage, error) {
 	var top, data map[string]json.RawMessage
 	if err := json.Unmarshal(c, &top); err != nil {
