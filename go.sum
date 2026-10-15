@@ -22,8 +22,8 @@ github.com/danielgtaylor/huma/v2 v2.39.1/go.mod h1:zcnQ38duIJ3VUHwFaBoZ6x8T+KN/m
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/davidgibbons/innkeeper v1.0.1-0.20261015174026-188958d1cca5 h1:JJbP5mbFDmSgDSfsesZt8zui3/1u/Mq/svzS9jueJ7c=
-github.com/davidgibbons/innkeeper v1.0.1-0.20261015174026-188958d1cca5/go.mod h1:SQlQfj5ZUzEPBSA1hAeZ0TbTwimoydy/b3uhMWNq04E=
+github.com/davidgibbons/innkeeper v1.0.1-0.20261015194517-ff345352e54d h1:gbxFWaoBMrCTI9aWGmY/wFvxfU3sg20fBqFFIiumIQQ=
+github.com/davidgibbons/innkeeper v1.0.1-0.20261015194517-ff345352e54d/go.mod h1:SQlQfj5ZUzEPBSA1hAeZ0TbTwimoydy/b3uhMWNq04E=
 github.com/devsisters/go-diff3 v0.0.0-20250819115249-1cdef3ea7ce0 h1:gnVPb2qHzpSz4wBlJdANgGlgOkmUEoDmmpc0IBBB3V8=
 github.com/devsisters/go-diff3 v0.0.0-20250819115249-1cdef3ea7ce0/go.mod h1:0BbqWY/IZ4sX/HuB/dUuUYCF6sxC288Nxm1MIqHlS/8=
 github.com/dnaeon/go-vcr v1.2.0 h1:zHCHvJYTMh1N7xnV7zf1m1GPBF9Ad0Jk/whtQ1663qI=
