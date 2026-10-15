@@ -1,8 +1,9 @@
 # forge-ai
 
-Writes, revises, tightens, and evaluates character cards, and adds
+Writes, revises, tightens, evaluates, and scores character cards, and adds
 lorebook entries, with a language model, through [any-llm-go](https://github.com/mozilla-ai/any-llm-go). It
-offers the `action` capability, so it needs a core that has it.
+offers the `action`, `records`, and `enrich` capabilities, so it needs a
+core that has them.
 
 Each instance is one model setup. `provider` and `model` are required.
 `api_key` is optional for `openai-compatible`, `ollama`, `llamacpp`, and
@@ -34,6 +35,21 @@ entry has no `id`, `enabled` true, `insertion_order` 100, `position`
 dropped when one of its keys is an earlier entry's first key or more than
 half its keys are taken; otherwise it loses only its taken keys. A run that
 adds nothing proposes the lorebook unchanged.
+
+## Scores
+
+The `enrich` capability runs the `evaluate` prompt on each card the owner
+picks, one model call per card, and stores its scores, all 0 to 100:
+
+| Key | Score |
+|---|---|
+| `quality` | The overall score, shown on the library grid |
+| `consistency`, `voice`, `first_impression`, `roleplayability`, `token_efficiency`, `field_governance` | Each evaluate dimension |
+
+A score outside 0 to 100 is clamped to the nearest end. A card whose model
+call fails, or whose reply has no scores, stores nothing and shows the
+error; the other cards still get scored. Each value records the model and
+the prompt's version, `evaluate-` plus a hash of `prompts/evaluate.tmpl`.
 
 ## Prompts
 
