@@ -41,3 +41,50 @@ at commit `0b2f57e`, changed to ask for JSON keyed by CCv3 data keys.
 the owner turns on Library access for the instance. If the model rejects
 the request with tools, the run retries once without them, and only the
 cards and lorebooks the owner attached reach the model.
+
+## Skills
+
+A skill is an [Agent Skill](https://agentskills.io/specification): a
+`SKILL.md` with `name` and `description` frontmatter and Markdown
+instructions, plus optional reference files. The plugin keeps skills in its
+own database schema, so it needs a core with the `records` capability. The
+owner adds, edits, and imports them on the instance's settings page.
+
+`skills` in the instance config lists the enabled skills by name. Only
+enabled skills reach the model:
+
+- Every action offers the tools `load_skill` and `load_skill_file`.
+  `load_skill`'s description lists each enabled skill's name and
+  description; it returns the instructions and the reference file paths.
+- A `@skills/<name>` mention puts that skill's instructions in the system
+  prompt. A mention of a skill that isn't enabled fails the run.
+- If the model rejects tools, the retry without them keeps only the
+  mentioned skills.
+
+Renaming a skill drops it from `skills` until you edit the config.
+
+### Import
+
+Import takes a `SKILL.md` or a zip of a skill folder, uploaded or by an
+`http` or `https` URL. A zip is recognized by its content, not its name.
+Importing a skill replaces the one with the same name.
+
+| Limit | Value |
+|---|---|
+| Upload or download | 8 MiB |
+| Download timeout | 30 seconds |
+| Zip entries | 200 |
+| `SKILL.md` or one reference file | 1 MiB |
+| Instructions and reference files together | 4 MiB |
+| Reference files | 64 |
+
+- A zip holds exactly one `SKILL.md`. Its folder is the skill; files outside
+  that folder are ignored.
+- A zip entry whose path is absolute, contains `\`, or leaves the folder
+  with `..` fails the import.
+- Files that aren't UTF-8 text, such as images, are skipped.
+- URLs may point at private and loopback addresses, such as a Git server on
+  your LAN. The plugin runs on your network and importing needs write
+  access in Innkeeper, so refusing them would block real uses. A writer can
+  make the plugin request any address it can reach, and sees the status of
+  a failed request; give write access only to people you trust with that.

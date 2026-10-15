@@ -87,6 +87,11 @@ type host struct {
 
 func startPlugin(t *testing.T, config map[string]any, secrets map[string]string) *host {
 	t.Helper()
+	return startWith(t, protocol.InitializeParams{Protocol: 1, Config: config, Secrets: secrets})
+}
+
+func startWith(t *testing.T, params protocol.InitializeParams) *host {
+	t.Helper()
 	toPlugin, fromHost := io.Pipe()
 	toHost, fromPlugin := io.Pipe()
 	srv := &server{}
@@ -121,7 +126,7 @@ func startPlugin(t *testing.T, config map[string]any, secrets map[string]string)
 		fromPlugin.Close()
 	})
 	var res protocol.InitializeResult
-	if err := h.conn.Call(ctx, protocol.MethodInitialize, protocol.InitializeParams{Protocol: 1, Config: config, Secrets: secrets}, &res); err != nil {
+	if err := h.conn.Call(ctx, protocol.MethodInitialize, params, &res); err != nil {
 		t.Fatal(err)
 	}
 	return h
@@ -411,7 +416,7 @@ func TestCancelStopsTheToolLoop(t *testing.T) {
 		return "{}", nil
 	}
 	params := anyllm.CompletionParams{Model: "m", Messages: []anyllm.Message{{Role: anyllm.RoleUser, Content: "hi"}}}
-	if _, err := complete(ctx, in, params, lib, func() func(string) { return func(string) {} }); !errors.Is(err, context.Canceled) {
+	if _, err := complete(ctx, in, params, toolbox{tools: libraryTools, call: lib}, func() func(string) { return func(string) {} }); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 	if len(llm.requests) != 1 {

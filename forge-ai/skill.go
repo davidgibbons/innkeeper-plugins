@@ -201,8 +201,8 @@ func parseZip(b []byte) (skill, error) {
 }
 
 // fetchSkill downloads a SKILL.md or a zip. Private and loopback addresses
-// are allowed: the plugin runs on the owner's network, and only someone who
-// can change the instance's settings can import.
+// are allowed, since skills may live on the owner's LAN; importing needs
+// write access in the core.
 func fetchSkill(ctx context.Context, raw string) (skill, error) {
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {

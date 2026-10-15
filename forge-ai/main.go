@@ -5,7 +5,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -15,14 +14,15 @@ import (
 	anyllm "github.com/mozilla-ai/any-llm-go"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 // instance is the model setup initialize configured. err is a settings
-// problem, reported by the first run.
+// problem, reported by the first run. store is nil without a database_url.
 type instance struct {
 	settings settings
 	llm      anyllm.Provider
 	err      error
+	store    *store
 }
 
 type server struct {
@@ -48,29 +48,52 @@ func (srv *server) handle(ctx context.Context, method string, params json.RawMes
 			return nil, invalid("%v", err)
 		}
 		in := &instance{}
+		if p.DatabaseURL != "" {
+			var err error
+			if in.store, err = openStore(ctx, p.DatabaseURL, p.InstanceID); err != nil {
+				return nil, err
+			}
+		}
 		in.settings, in.err = parseSettings(p.Config)
 		if in.err == nil {
 			in.llm, in.err = in.settings.provider(p.Secrets["api_key"])
 		}
 		srv.cur.Store(in)
 		return protocol.InitializeResult{Protocol: protocol.Version, Name: "forge-ai", Version: version,
-			Capabilities: []string{"action"}}, nil
+			Capabilities: []string{"action", "records"}}, nil
 	case protocol.MethodShutdown:
+		if in := srv.cur.Load(); in != nil && in.store != nil {
+			in.store.close()
+		}
 		return nil, nil
+	case protocol.MethodActionList, protocol.MethodActionRun, protocol.MethodRecordsList, protocol.MethodRecordsGet,
+		protocol.MethodRecordsPut, protocol.MethodRecordsDelete, protocol.MethodRecordsImport:
+	default:
+		return nil, protocol.MethodNotFound(method)
+	}
+	in := srv.cur.Load()
+	if in == nil {
+		return nil, fmt.Errorf("%s before initialize", method)
+	}
+	switch method {
 	case protocol.MethodActionList:
-		list := protocol.ActionListResult{}
-		for _, a := range actions {
-			list.Actions = append(list.Actions, a.Action)
-		}
-		return list, nil
+		return actionList(ctx, in)
 	case protocol.MethodActionRun:
-		in := srv.cur.Load()
-		if in == nil {
-			return nil, errors.New("action.run before initialize")
-		}
 		return srv.run(ctx, in, params)
 	}
-	return nil, protocol.MethodNotFound(method)
+	return srv.records(ctx, in, method, params)
+}
+
+func actionList(ctx context.Context, in *instance) (protocol.ActionListResult, error) {
+	list := protocol.ActionListResult{}
+	for _, a := range actions {
+		list.Actions = append(list.Actions, a.Action)
+	}
+	enabled, err := in.enabledSkills(ctx)
+	for _, sk := range enabled {
+		list.Skills = append(list.Skills, protocol.Skill{Name: sk.Name, Description: sk.Description})
+	}
+	return list, err
 }
 
 func (srv *server) run(ctx context.Context, in *instance, params json.RawMessage) (*protocol.ActionRunResult, error) {
@@ -89,6 +112,15 @@ func (srv *server) run(ctx context.Context, in *instance, params json.RawMessage
 	if err != nil {
 		return nil, err
 	}
+	enabled, err := in.enabledSkills(ctx)
+	if err != nil {
+		return nil, err
+	}
+	forced, err := in.forcedSkills(ctx, enabled, r.Context.Skills)
+	if err != nil {
+		return nil, err
+	}
+	system += skillsPrompt(forced)
 	var userContent any = user
 	if r.Images.Reference != "" || r.Images.Avatar != "" {
 		parts := []anyllm.ContentPart{{Type: "text", Text: user}}
@@ -112,11 +144,11 @@ func (srv *server) run(ctx context.Context, in *instance, params json.RawMessage
 	if in.settings.MaxTokens != nil {
 		req.MaxTokens = in.settings.MaxTokens
 	}
-	var lib library
+	var lib toolFunc
 	if r.Library {
 		lib = coreLibrary(srv.conn, r.Run)
 	}
-	output, err := complete(ctx, in, req, lib, func() func(string) { return srv.progress(r) })
+	output, err := complete(ctx, in, req, in.tools(enabled, lib), func() func(string) { return srv.progress(r) })
 	if err != nil {
 		return nil, err
 	}

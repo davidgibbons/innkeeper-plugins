@@ -41,13 +41,13 @@ func tool(name, description string, properties map[string]any, required ...strin
 		Parameters: map[string]any{"type": "object", "properties": properties, "required": required}}}
 }
 
-// library answers one tool call, through library.call to the core.
-type library func(ctx context.Context, name, arguments string) (string, error)
+// toolFunc answers one tool call.
+type toolFunc func(ctx context.Context, name, arguments string) (string, error)
 
 // coreLibrary sends a run's tool calls to the core. A refusal or a tool
 // error goes back to the model as the tool's result; a run that has ended
 // stops the loop.
-func coreLibrary(conn *protocol.Conn, run string) library {
+func coreLibrary(conn *protocol.Conn, run string) toolFunc {
 	return func(ctx context.Context, name, arguments string) (string, error) {
 		if arguments == "" {
 			arguments = "{}"
@@ -76,24 +76,30 @@ func coreLibrary(conn *protocol.Conn, run string) library {
 	}
 }
 
+// toolbox is the tools a run offers the model and what answers their calls.
+type toolbox struct {
+	tools []anyllm.Tool
+	call  toolFunc
+}
+
 // complete runs the conversation to the model's final answer, answering its
-// tool calls through lib when lib is set. newProgress gives each request its
-// own callback, which gets that request's text so far.
-func complete(ctx context.Context, in *instance, params anyllm.CompletionParams, lib library, newProgress func() func(string)) (string, error) {
+// tool calls through box. newProgress gives each request its own callback,
+// which gets that request's text so far.
+func complete(ctx context.Context, in *instance, params anyllm.CompletionParams, box toolbox, newProgress func() func(string)) (string, error) {
 	for round := 1; ; round++ {
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
 		// The last round offers no tools, so the model has to answer.
-		params.Tools = nil
-		if lib != nil && round < maxToolRounds {
-			params.Tools = libraryTools
+		params.Tools = box.tools
+		if round == maxToolRounds {
+			params.Tools = nil
 		}
 		text, calls, err := stream(ctx, in, params, newProgress())
 		if err != nil && round == 1 && params.Tools != nil && errors.Is(err, llmerrors.ErrInvalidRequest) {
-			// Most likely a model without tool support; the context in the prompt still applies.
-			fmt.Fprintf(os.Stderr, "retrying without library tools: %v\n", err)
-			lib, params.Tools = nil, nil
+			// Most likely a model without tool support; the context and forced skills in the prompt still apply.
+			fmt.Fprintf(os.Stderr, "retrying without tools: %v\n", err)
+			box.tools, params.Tools = nil, nil
 			text, calls, err = stream(ctx, in, params, newProgress())
 		}
 		if err != nil || len(calls) == 0 || params.Tools == nil {
@@ -101,12 +107,12 @@ func complete(ctx context.Context, in *instance, params anyllm.CompletionParams,
 		}
 		params.Messages = append(params.Messages, anyllm.Message{Role: anyllm.RoleAssistant, Content: text, ToolCalls: calls})
 		for _, c := range calls {
-			result, err := lib(ctx, c.Function.Name, c.Function.Arguments)
+			result, err := box.call(ctx, c.Function.Name, c.Function.Arguments)
 			if err == nil {
 				err = ctx.Err()
 			}
 			if err != nil {
-				return "", fmt.Errorf("library.call %s: %w", c.Function.Name, err)
+				return "", fmt.Errorf("tool %s: %w", c.Function.Name, err)
 			}
 			params.Messages = append(params.Messages, anyllm.Message{Role: anyllm.RoleTool, Content: result, ToolCallID: c.ID})
 		}
