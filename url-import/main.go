@@ -43,6 +43,18 @@ func main() {
 			return detectSources(params)
 		case protocol.MethodSitesParse:
 			return parseSource(params)
+		case protocol.MethodTargetDescribe:
+			return targetInfo, nil
+		case protocol.MethodTargetList, protocol.MethodTargetListLorebooks:
+			return noItems, nil
+		case protocol.MethodTargetGet:
+			tmp := blobTmp.Load()
+			if tmp == nil {
+				return nil, errors.New("target.get before initialize")
+			}
+			return getCard(ctx, f, *tmp, params)
+		case protocol.MethodTargetGetLorebook:
+			return getLorebook(ctx, f, params)
 		}
 		return nil, protocol.MethodNotFound(method)
 	}
