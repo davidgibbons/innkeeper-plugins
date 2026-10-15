@@ -66,8 +66,8 @@ func TestChubLorebook(t *testing.T) {
 	if !ok || ev.Item != "https://chub.ai/lorebooks/u/eldoria" || len(ev.Lorebook) == 0 {
 		t.Fatalf("sent %+v", sent)
 	}
-	if _, err := importURL(t, chubSite(t), "https://chub.ai/lorebooks/u/hidden"); rpcErr(t, err).Retryable() {
-		t.Errorf("hidden lorebook: err = %v", err)
+	if _, err := importURL(t, chubSite(t), "https://chub.ai/lorebooks/u/hidden"); rpcErr(t, err).Code != protocol.CodeRemoteNotFound || rpcErr(t, err).Retryable() {
+		t.Errorf("hidden lorebook: err = %v, want -32004", err)
 	}
 }
 
@@ -85,8 +85,8 @@ func TestChubBadPaths(t *testing.T) {
 			t.Errorf("%s: err = %v, want invalid params", page, err)
 		}
 	}
-	if _, err := importURL(t, f, "https://chub.ai/characters/u/gone"); rpcErr(t, err).Retryable() {
-		t.Errorf("missing card: err = %v, want not retryable", err)
+	if _, err := importURL(t, f, "https://chub.ai/characters/u/gone"); rpcErr(t, err).Code != protocol.CodeRemoteNotFound || rpcErr(t, err).Retryable() {
+		t.Errorf("missing card: err = %v, want -32004", err)
 	}
 }
 

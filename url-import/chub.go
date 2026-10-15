@@ -41,12 +41,12 @@ func chub(ctx context.Context, f *fetcher, u *url.URL) (found, error) {
 	item := chubURL(dir, user, slug)
 	if dir == "lorebooks" {
 		if lb := meta.Node.Definition.EmbeddedLorebook; len(lb) == 0 || string(lb) == "null" {
-			return found{}, permanent(errors.New("chub.ai sent no lorebook; its definition may be hidden"))
+			return found{}, gone(errors.New("chub.ai sent no lorebook; its definition may be hidden"))
 		}
 		return found{item: item, lorebook: meta.Node.Definition.EmbeddedLorebook, name: meta.Node.Name}, nil
 	}
 	if meta.Node.ID == "" {
-		return found{}, permanent(errors.New("chub.ai sent no card ID"))
+		return found{}, gone(errors.New("chub.ai sent no card ID; its definition may be hidden"))
 	}
 	b, err := f.get(ctx, "chub.ai", chubAPI+"/api/v4/projects/"+meta.Node.ID.String()+"/repository/files/card.json/raw")
 	if err != nil {

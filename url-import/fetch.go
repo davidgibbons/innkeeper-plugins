@@ -88,8 +88,8 @@ func (f *fetcher) get(ctx context.Context, site, url string) ([]byte, error) {
 		}
 	}
 	switch {
-	case resp.StatusCode == http.StatusNotFound:
-		return nil, permanent(fmt.Errorf("not found on %s", site))
+	case resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone:
+		return nil, gone(fmt.Errorf("not found on %s", site))
 	case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500:
 		return nil, retryable(fmt.Errorf("%s answered %s", site, resp.Status))
 	case resp.StatusCode != http.StatusOK:
@@ -142,4 +142,9 @@ func retryable(err error) error {
 
 func permanent(err error) error {
 	return protocol.NewError(protocol.CodeInternalError, err.Error(), false)
+}
+
+// gone is a page that was deleted, made private, or hides its definition.
+func gone(err error) error {
+	return protocol.NewError(protocol.CodeRemoteNotFound, err.Error(), false)
 }
