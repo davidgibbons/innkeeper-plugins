@@ -1,6 +1,7 @@
 name = "url-import"
-version = "0.2.0"
+version = "0.3.0"
 protocol = 1
 command = ["./url-import"]
-capabilities = ["import", "sites"]
+capabilities = ["import", "sites", "pull"]
 inputs = ["url"]
+source_kinds = ["chub", "risu", "character-tavern"]

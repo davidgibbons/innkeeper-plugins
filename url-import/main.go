@@ -1,6 +1,6 @@
 // Command url-import is an import plugin. It imports one card or lorebook
 // from its page on a public site, such as chub.ai, and is a sites plugin for
-// the same sites.
+// the same sites, which follows their pages for the author's changes.
 package main
 
 import (
@@ -14,7 +14,7 @@ import (
 	"github.com/davidgibbons/innkeeper/protocol"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 func main() {
 	// Set by initialize; requests run on other goroutines.
@@ -30,7 +30,7 @@ func main() {
 			}
 			blobTmp.Store(&p.BlobTmp)
 			return protocol.InitializeResult{Protocol: protocol.Version, Name: "url-import", Version: version,
-				Capabilities: []string{"import", "sites"}}, nil
+				Capabilities: []string{"import", "sites", "pull"}}, nil
 		case protocol.MethodShutdown:
 			return nil, nil
 		case protocol.MethodImportRun:
