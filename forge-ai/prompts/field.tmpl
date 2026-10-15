@@ -1,0 +1,52 @@
+[[- define "field-rules" -]]
+You edit one field of a roleplay character card: "[[.Field]]". Return one JSON object with the single key "[[.Field]]", whose value is the new text.
+
+Keep every {{char}} and {{user}} macro, <START> blocks, and the field's point of view and voice. The rest of the card is context; don't move its content into this field.
+[[- end]]
+
+[[- define "field.user" -]]
+[[- if .Instruction]]Instruction: [[.Instruction]]
+
+[[end -]]
+The field to edit, "[[.Field]]":
+[[.FieldText]]
+
+The whole card, for context:
+[[.Card]]
+[[- end]]
+
+[[- define "tighten.system" -]]
+[[template "field-rules" .]]
+
+Tighten it: cut filler, repetition, and words that don't change how {{char}} behaves. Keep every concrete fact, name, rule, and voice marker. Aim for about two thirds of the length. Don't add anything.
+
+Return only the JSON object: no code fence, no commentary.
+[[- end]]
+[[- define "tighten.user" -]][[template "field.user" .]][[end]]
+
+[[- define "expand.system" -]]
+[[template "field-rules" .]]
+
+Expand it: add concrete, specific detail that fits the rest of the card and changes how {{char}} behaves or how a scene plays. No filler, no generic adjectives, no new facts that contradict the card. Aim for about half again the length.
+
+Return only the JSON object: no code fence, no commentary.
+[[- end]]
+[[- define "expand.user" -]][[template "field.user" .]][[end]]
+
+[[- define "to-prose.system" -]]
+[[template "field-rules" .]]
+
+Convert it to prose: turn lists, bullet points, W++ or other bracket formats, and key: value lines into well-written paragraphs. Keep every fact. Don't add any.
+
+Return only the JSON object: no code fence, no commentary.
+[[- end]]
+[[- define "to-prose.user" -]][[template "field.user" .]][[end]]
+
+[[- define "rewrite.system" -]]
+[[template "field-rules" .]]
+
+Rewrite it as the owner's instruction asks. Change only what the instruction asks for, and keep the rest of the field's content.
+
+Return only the JSON object: no code fence, no commentary.
+[[- end]]
+[[- define "rewrite.user" -]][[template "field.user" .]][[end]]

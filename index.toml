@@ -78,3 +78,12 @@ version = "0.3.0"
 protocol = 1
 capabilities = ["import", "sites", "pull"]
 description = "Import a card or lorebook from its page URL on chub.ai, RisuRealm, or Character Tavern, link library items to their pages there, and check those pages for the author's changes. Needs a core with source_kinds."
+
+[[plugin]]
+name = "forge-ai"
+category = "AI"
+path = "forge-ai"
+version = "0.1.0"
+protocol = 1
+capabilities = ["action"]
+description = "Write, revise, tighten, and evaluate cards with a language model: OpenAI, Anthropic, Gemini, Mistral, Groq, DeepSeek, Ollama, llama.cpp, or any OpenAI-compatible server. Needs a core with the action capability."

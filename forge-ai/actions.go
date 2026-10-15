@@ -1,0 +1,289 @@
+package main
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"reflect"
+	"slices"
+	"strings"
+
+	"github.com/davidgibbons/innkeeper/protocol"
+)
+
+// textFields are the card's prose fields, which field actions run on.
+var textFields = []string{"description", "personality", "scenario", "first_mes", "mes_example", "system_prompt",
+	"post_history_instructions", "creator_notes"}
+
+// cardKeys are the card data keys whole-card actions send the model and take
+// back. Other keys, such as extensions, never reach the model.
+var cardKeys = append(append([]string{"name"}, textFields...), "tags")
+
+// generatedKeys are what generate writes, in its prompt's order.
+var generatedKeys = []string{"name", "description", "personality", "scenario", "first_mes", "mes_example", "tags",
+	"system_prompt", "post_history_instructions"}
+
+var evaluationKeys = []string{"summary", "overall_score", "card_type", "dimensions", "contradictions",
+	"misplaced_content", "suggestions"}
+
+// action is one declared action and how it runs.
+type action struct {
+	protocol.Action
+	temperature float64
+	maxTokens   int
+}
+
+const povSchema = `{"type": "object", "properties": {"point_of_view": {"type": "string", "title": "Point of view", "enum": [%s]}}%s}`
+
+var actions = []action{
+	{protocol.Action{ID: "generate", Label: "Forge", Description: "Write a new card from a concept.",
+		Applies: protocol.ApplyNew, Instruction: true, Library: true, Images: true,
+		Inputs: json.RawMessage(fmt.Sprintf(povSchema, `"first", "third", "scenario"`, ""))}, 0.8, 8192},
+	{protocol.Action{ID: "revise", Label: "Reforge", Description: "Change the card as you describe.",
+		Applies: protocol.ApplyCard, Instruction: true, Library: true}, 0.7, 8192},
+	{protocol.Action{ID: "evaluate", Label: "Evaluate", Description: "Score the card on six dimensions and list its problems.",
+		Applies: protocol.ApplyCard, ReportOnly: true}, 0.3, 4096},
+	{protocol.Action{ID: "tighten-card", Label: "Tighten card", Description: "Cut filler and repetition across the whole card.",
+		Applies: protocol.ApplyCard}, 0.5, 8192},
+	{protocol.Action{ID: "change-pov", Label: "Change point of view", Description: "Rewrite the card in first or third person.",
+		Applies: protocol.ApplyCard, Inputs: json.RawMessage(fmt.Sprintf(povSchema, `"first", "third"`, `, "required": ["point_of_view"]`))}, 0.6, 8192},
+	{protocol.Action{ID: "tighten", Label: "Tighten", Description: "Cut filler from this field.",
+		Applies: protocol.ApplyCard, Fields: textFields}, 0.5, 4096},
+	{protocol.Action{ID: "expand", Label: "Expand", Description: "Add concrete detail to this field.",
+		Applies: protocol.ApplyCard, Fields: textFields}, 0.8, 4096},
+	{protocol.Action{ID: "to-prose", Label: "Convert to prose", Description: "Turn lists and bracket formats into paragraphs.",
+		Applies: protocol.ApplyCard, Fields: textFields}, 0.5, 4096},
+	{protocol.Action{ID: "rewrite", Label: "Rewrite…", Description: "Rewrite this field as you describe.",
+		Applies: protocol.ApplyCard, Fields: textFields, Instruction: true}, 0.7, 4096},
+	{protocol.Action{ID: "examples", Label: "Write examples", Description: "Write new example dialogue.",
+		Applies: protocol.ApplyCard, Fields: []string{"mes_example"},
+		Inputs: json.RawMessage(`{"type": "object", "properties": {"count": {"type": "integer", "title": "Examples", "minimum": 1, "maximum": 10, "default": 3}}}`)}, 0.8, 4096},
+}
+
+func findAction(id string) (action, bool) {
+	i := slices.IndexFunc(actions, func(a action) bool { return a.ID == id })
+	if i < 0 {
+		return action{}, false
+	}
+	return actions[i], true
+}
+
+// run is one action.run, checked.
+type run struct {
+	action
+	protocol.ActionRunParams
+	draft       map[string]json.RawMessage
+	pointOfView string
+	count       int
+}
+
+func invalid(format string, args ...any) error {
+	return protocol.NewError(-32602, fmt.Sprintf(format, args...), false)
+}
+
+// parseRun checks the params against the action's declaration.
+func parseRun(p protocol.ActionRunParams) (*run, error) {
+	a, ok := findAction(p.Action)
+	if !ok {
+		return nil, invalid("unknown action %q", p.Action)
+	}
+	r := &run{action: a, ActionRunParams: p}
+	if len(a.Fields) > 0 && !slices.Contains(a.Fields, p.Field) {
+		return nil, invalid("action %s doesn't run on field %q", a.ID, p.Field)
+	}
+	if a.Instruction && strings.TrimSpace(p.Instruction) == "" {
+		return nil, invalid("action %s needs an instruction", a.ID)
+	}
+	if a.Applies != protocol.ApplyNew {
+		if err := json.Unmarshal(p.Entity.Data, &r.draft); err != nil || r.draft == nil {
+			return nil, invalid("action %s needs the card's data", a.ID)
+		}
+	}
+	var inputs struct {
+		PointOfView string `json:"point_of_view"`
+		Count       int    `json:"count"`
+	}
+	if len(p.Inputs) > 0 {
+		if err := json.Unmarshal(p.Inputs, &inputs); err != nil {
+			return nil, invalid("inputs: %v", err)
+		}
+	}
+	r.pointOfView, r.count = inputs.PointOfView, inputs.Count
+	switch a.ID {
+	case "generate":
+		if r.pointOfView == "" {
+			r.pointOfView = "third"
+		}
+		if !slices.Contains([]string{"first", "third", "scenario"}, r.pointOfView) {
+			return nil, invalid("point_of_view must be first, third, or scenario")
+		}
+	case "change-pov":
+		if r.pointOfView != "first" && r.pointOfView != "third" {
+			return nil, invalid("point_of_view must be first or third")
+		}
+	case "examples":
+		if r.count == 0 {
+			r.count = 3
+		}
+		r.count = min(max(r.count, 1), 10)
+	}
+	return r, nil
+}
+
+// writes is the keys the model returns for this run.
+func (r *run) writes() []string {
+	switch {
+	case r.ReportOnly:
+		return evaluationKeys
+	case len(r.Fields) > 0:
+		return []string{r.Field}
+	case r.ID == "generate" && r.pointOfView == "scenario":
+		return append(slices.Clone(generatedKeys), "creator_notes")
+	case r.ID == "generate":
+		return generatedKeys
+	}
+	return cardKeys
+}
+
+// sent is the card as the model sees it: cardKeys, with absent ones empty.
+func (r *run) sent() (map[string]any, error) {
+	card := map[string]any{}
+	for _, k := range cardKeys {
+		v, err := typed(k, r.draft[k])
+		if err != nil {
+			return nil, fmt.Errorf("the card's %s: %w", k, err)
+		}
+		card[k] = v
+	}
+	return card, nil
+}
+
+// typed decodes a card value: a list of strings for tags, otherwise a string.
+// Absent is empty.
+func typed(key string, raw json.RawMessage) (any, error) {
+	if key == "tags" {
+		tags := []string{}
+		if len(raw) > 0 && string(raw) != "null" {
+			if err := json.Unmarshal(raw, &tags); err != nil {
+				return nil, errors.New("isn't a list of text")
+			}
+		}
+		return tags, nil
+	}
+	var s string
+	if len(raw) > 0 && string(raw) != "null" {
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return nil, errors.New("isn't text")
+		}
+	}
+	return s, nil
+}
+
+// result turns the model's output into the reply.
+func (r *run) result(output string) (protocol.ActionRunResult, error) {
+	res := protocol.ActionRunResult{Raw: output}
+	obj, err := parseObject(output)
+	if err != nil {
+		return res, err
+	}
+	if r.ReportOnly {
+		res.Report, err = report(obj)
+		return res, err
+	}
+	res.Proposal, err = r.proposal(obj)
+	return res, err
+}
+
+// proposal is the draft with each key the model changed replaced.
+func (r *run) proposal(got map[string]json.RawMessage) (json.RawMessage, error) {
+	sent, err := r.sent()
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]json.RawMessage{}
+	for k, v := range r.draft {
+		out[k] = v
+	}
+	for _, k := range r.writes() {
+		raw, ok := got[k]
+		if !ok {
+			continue
+		}
+		v, err := typed(k, raw)
+		if err != nil {
+			return nil, fmt.Errorf("the model's %s %w", k, err)
+		}
+		if reflect.DeepEqual(v, sent[k]) {
+			continue
+		}
+		if out[k], err = json.Marshal(v); err != nil {
+			return nil, err
+		}
+	}
+	return json.Marshal(out)
+}
+
+// dimensions are evaluate's, in its prompt's order.
+var dimensions = []struct{ key, label string }{
+	{"consistency", "Consistency"}, {"voice", "Voice"}, {"first_impression", "First impression"},
+	{"roleplayability", "Roleplayability"}, {"token_efficiency", "Token efficiency"}, {"field_governance", "Field governance"},
+}
+
+// evaluation is the JSON evaluate's prompt asks for.
+type evaluation struct {
+	Summary      string   `json:"summary"`
+	OverallScore *float64 `json:"overall_score"`
+	Dimensions   map[string]struct {
+		Score   float64 `json:"score"`
+		Comment string  `json:"comment"`
+	} `json:"dimensions"`
+	Contradictions []struct {
+		Fields []string `json:"fields"`
+		Issue  string   `json:"issue"`
+	} `json:"contradictions"`
+	MisplacedContent []struct {
+		Excerpt        string `json:"excerpt"`
+		CurrentField   string `json:"current_field"`
+		SuggestedField string `json:"suggested_field"`
+		Reason         string `json:"reason"`
+	} `json:"misplaced_content"`
+	Suggestions []string `json:"suggestions"`
+}
+
+func report(obj map[string]json.RawMessage) (*protocol.Report, error) {
+	b, err := json.Marshal(obj)
+	if err != nil {
+		return nil, err
+	}
+	var e evaluation
+	if err := json.Unmarshal(b, &e); err != nil {
+		return nil, fmt.Errorf("the model's evaluation: %w", err)
+	}
+	r := &protocol.Report{Summary: e.Summary, Score: e.OverallScore, Suggestions: e.Suggestions}
+	for _, d := range dimensions {
+		if v, ok := e.Dimensions[d.key]; ok {
+			r.Dimensions = append(r.Dimensions, protocol.ReportDimension{Key: d.key, Label: d.label, Score: v.Score, Comment: v.Comment})
+		}
+	}
+	for _, c := range e.Contradictions {
+		if strings.TrimSpace(c.Issue) != "" {
+			r.Findings = append(r.Findings, protocol.Finding{Severity: "high", Text: c.Issue, Fields: c.Fields})
+		}
+	}
+	for _, m := range e.MisplacedContent {
+		f := protocol.Finding{Severity: "medium", Text: m.Reason}
+		if m.CurrentField != "" {
+			f.Fields = []string{m.CurrentField}
+		}
+		if m.SuggestedField != "" {
+			f.Move = &protocol.FindingMove{Excerpt: m.Excerpt, To: m.SuggestedField}
+			if strings.TrimSpace(f.Text) == "" {
+				f.Text = "Belongs in " + m.SuggestedField + "."
+			}
+		}
+		if strings.TrimSpace(f.Text) != "" {
+			r.Findings = append(r.Findings, f)
+		}
+	}
+	return r, r.Validate()
+}

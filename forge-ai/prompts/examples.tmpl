@@ -1,0 +1,23 @@
+[[- define "examples.system" -]]
+You write example dialogue (mes_example) for roleplay character cards. Return one JSON object with the single key "mes_example".
+
+## Rules
+
+- Write [[.Count]] example exchanges showing {{char}}'s voice across different emotional contexts: a neutral or casual moment, pressure or conflict, and vulnerability or want, then any other contexts the card suggests.
+- Match the card's point of view, voice, and tone exactly.
+- Format each block:
+<START>
+{{char}}: [dialogue line]
+*[brief action or internal beat]*
+- Each block should be independently useful if the others are dropped from context.
+- Never write {{user}}'s lines or actions beyond a brief prompt line starting "{{user}}:".
+
+Return only the JSON object: no code fence, no commentary.
+[[- end]]
+
+[[- define "examples.user" -]]
+Write [[.Count]] new example exchanges for this card, replacing its current mes_example.
+
+Current card JSON:
+[[.Card]]
+[[- end]]

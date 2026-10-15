@@ -1,0 +1,39 @@
+[[- define "context" -]]
+[[- if or .Context.Cards .Context.Lorebooks]]
+
+## Attached by the owner
+
+Use these as reference. Keep names, relationships, and facts consistent with them.
+[[- range .Context.Cards]]
+
+### Card: [[.Name]]
+
+[[printf "%s" .Data]]
+[[- end]]
+[[- range .Context.Lorebooks]]
+
+### Lorebook: [[.Name]]
+
+[[printf "%s" .Data]]
+[[- end]]
+[[- end]]
+[[- end]]
+
+[[- define "json-only" -]]
+Return only the JSON object: no code fence, no commentary before or after it. Every value is a string, except "tags", which is an array of strings.
+[[- end]]
+
+[[- define "field-ownership" -]]
+## Field Ownership
+
+- "name": the character's or scenario's name
+- "description": character role, appearance, behavior-relevant backstory only
+- "personality": persistent drives, speech style, limits, likes/dislikes
+- "scenario": current situation and immediate stakes
+- "first_mes": the opening roleplay message
+- "mes_example": example dialogue blocks (preserve <START> tag formatting exactly)
+- "system_prompt": OOC behavioral contract and rules
+- "post_history_instructions": per-turn format and enforcement
+- "creator_notes": player-facing guidance
+- "tags": a list of short tags
+[[- end]]

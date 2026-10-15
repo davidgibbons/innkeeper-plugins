@@ -1,0 +1,57 @@
+name = "forge-ai"
+version = "0.1.0"
+protocol = 1
+command = ["./forge-ai"]
+capabilities = ["action"]
+secrets = ["api_key"]
+
+[config]
+type = "object"
+required = ["provider", "model"]
+
+[config.properties.provider]
+type = "string"
+title = "Provider"
+enum = ["openai-compatible", "openai", "anthropic", "gemini", "mistral", "groq", "deepseek", "ollama", "llamacpp", "llamafile"]
+description = "openai-compatible covers vLLM, llama.cpp servers, LM Studio, and OpenRouter. The API key is optional for it and for ollama, llamacpp, and llamafile."
+
+[config.properties.base_url]
+type = "string"
+title = "Base URL"
+description = "The API's URL, such as http://localhost:1234/v1. Required for openai-compatible; for other providers it overrides the default."
+
+[config.properties.model]
+type = "string"
+title = "Model"
+
+[config.properties.temperature]
+type = "number"
+title = "Temperature"
+description = "Leave empty to use each action's own."
+
+[config.properties.max_tokens]
+type = "integer"
+title = "Max tokens"
+description = "Leave empty to use each action's own: 8192 for whole-card actions, 4096 for the rest."
+
+[config.properties.house_style]
+type = "string"
+title = "House style"
+description = "Added to every action's system prompt, such as \"British spelling; no em dashes\"."
+
+[config.properties.additions]
+type = "object"
+title = "Additions"
+description = "Added to one action's system prompt."
+
+[config.properties.additions.properties]
+generate = { type = "string", title = "Forge" }
+revise = { type = "string", title = "Reforge" }
+evaluate = { type = "string", title = "Evaluate" }
+tighten-card = { type = "string", title = "Tighten card" }
+change-pov = { type = "string", title = "Change point of view" }
+tighten = { type = "string", title = "Tighten" }
+expand = { type = "string", title = "Expand" }
+to-prose = { type = "string", title = "Convert to prose" }
+rewrite = { type = "string", title = "Rewrite" }
+examples = { type = "string", title = "Write examples" }
