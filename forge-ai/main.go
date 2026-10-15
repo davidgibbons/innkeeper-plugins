@@ -115,29 +115,38 @@ func (srv *server) run(ctx context.Context, in *instance, params json.RawMessage
 	if in.err != nil {
 		return nil, in.err
 	}
-	return srv.execute(ctx, in, r, func() func(string) { return srv.progress(r) })
+	return srv.perform(ctx, in, r, true, func() func(string) { return srv.progress(r) })
 }
 
-// execute runs a checked action to its result. newProgress gives each
-// request to the model its own progress callback.
-func (srv *server) execute(ctx context.Context, in *instance, r *run, newProgress func() func(string)) (*protocol.ActionRunResult, error) {
+// perform runs a checked action to its result. offerTools gives the model
+// the enabled skills and, for a library action, the core's library.
+// newProgress gives each request to the model its own progress callback.
+func (srv *server) perform(ctx context.Context, in *instance, r *run, offerTools bool, newProgress func() func(string)) (*protocol.ActionRunResult, error) {
 	system, user, err := r.prompts(in.settings)
 	if err != nil {
 		return nil, err
 	}
-	enabled, err := in.enabledSkills(ctx)
-	if err != nil {
-		if len(r.Context.Skills) > 0 {
-			return nil, fmt.Errorf("list skills: %w", err)
+	var box toolbox
+	if offerTools {
+		enabled, err := in.enabledSkills(ctx)
+		if err != nil {
+			if len(r.Context.Skills) > 0 {
+				return nil, fmt.Errorf("list skills: %w", err)
+			}
+			// Only skills fail with the database; the run goes on without them.
+			fmt.Fprintf(os.Stderr, "list skills: %v\n", err)
 		}
-		// Only skills fail with the database; the run goes on without them.
-		fmt.Fprintf(os.Stderr, "list skills: %v\n", err)
+		forced, err := in.forcedSkills(ctx, enabled, r.Context.Skills)
+		if err != nil {
+			return nil, err
+		}
+		system += skillsPrompt(forced)
+		var lib toolFunc
+		if r.Library {
+			lib = coreLibrary(srv.conn, r.Run)
+		}
+		box = in.tools(enabled, lib)
 	}
-	forced, err := in.forcedSkills(ctx, enabled, r.Context.Skills)
-	if err != nil {
-		return nil, err
-	}
-	system += skillsPrompt(forced)
 	var userContent any = user
 	if r.Images.Reference != "" || r.Images.Avatar != "" {
 		parts := []anyllm.ContentPart{{Type: "text", Text: user}}
@@ -153,19 +162,10 @@ func (srv *server) execute(ctx context.Context, in *instance, r *run, newProgres
 		}
 		userContent = parts
 	}
-	req := anyllm.CompletionParams{Model: in.settings.Model, Temperature: &r.temperature, MaxTokens: &r.maxTokens,
+	temperature, maxTokens := r.limits(in.settings)
+	req := anyllm.CompletionParams{Model: in.settings.Model, Temperature: &temperature, MaxTokens: &maxTokens,
 		Messages: []anyllm.Message{{Role: anyllm.RoleSystem, Content: system}, {Role: anyllm.RoleUser, Content: userContent}}}
-	if in.settings.Temperature != nil {
-		req.Temperature = in.settings.Temperature
-	}
-	if in.settings.MaxTokens != nil {
-		req.MaxTokens = in.settings.MaxTokens
-	}
-	var lib toolFunc
-	if r.Library {
-		lib = coreLibrary(srv.conn, r.Run)
-	}
-	output, err := complete(ctx, in, req, in.tools(enabled, lib), newProgress)
+	output, err := complete(ctx, in, req, box, newProgress)
 	if err != nil {
 		return nil, err
 	}

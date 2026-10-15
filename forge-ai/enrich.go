@@ -15,16 +15,26 @@ import (
 // goes under the dimension's key.
 const qualityKey = "quality"
 
-// evaluatePrompt names the evaluate prompt's version in each value's meta. It
-// hashes the template so it changes whenever the prompt does.
-var evaluatePrompt = func() string {
-	b, err := promptFiles.ReadFile("prompts/evaluate.tmpl")
+// evaluatePrompt names the evaluate setup in each value's meta: a hash of the
+// template and the settings that change the prompt or the output, so scores
+// from different setups don't look comparable.
+func evaluatePrompt(s settings) (string, error) {
+	tmpl, err := promptFiles.ReadFile("prompts/evaluate.tmpl")
 	if err != nil {
-		panic(err)
+		return "", err
 	}
-	sum := sha256.Sum256(b)
-	return "evaluate-" + hex.EncodeToString(sum[:4])
-}()
+	a, _ := findAction("evaluate")
+	temperature, maxTokens := a.limits(s)
+	h := sha256.New()
+	h.Write(tmpl)
+	// JSON keeps the fields apart, so no two setups hash the same text.
+	setup, err := json.Marshal([]any{s.HouseStyle, s.Additions[a.ID], temperature, maxTokens})
+	if err != nil {
+		return "", err
+	}
+	h.Write(setup)
+	return "evaluate-" + hex.EncodeToString(h.Sum(nil)[:4]), nil
+}
 
 // enrich scores each revision with the evaluate action. One revision's
 // failure is its own error; the rest of the batch goes on.
@@ -39,7 +49,11 @@ func (srv *server) enrich(ctx context.Context, in *instance, params json.RawMess
 	if in.err != nil {
 		return nil, in.err
 	}
-	meta, err := json.Marshal(map[string]string{"model": in.settings.Model, "prompt": evaluatePrompt})
+	prompt, err := evaluatePrompt(in.settings)
+	if err != nil {
+		return nil, err
+	}
+	meta, err := json.Marshal(map[string]string{"model": in.settings.Model, "prompt": prompt})
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +86,7 @@ func (srv *server) scores(ctx context.Context, in *instance, run string, rev pro
 	if err != nil {
 		return nil, err
 	}
-	res, err := srv.execute(ctx, in, r, func() func(string) { return func(string) {} })
+	res, err := srv.perform(ctx, in, r, false, func() func(string) { return func(string) {} })
 	if err != nil {
 		return nil, err
 	}

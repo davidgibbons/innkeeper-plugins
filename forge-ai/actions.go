@@ -68,6 +68,19 @@ var actions = []action{
 		Inputs: json.RawMessage(`{"type": "object", "properties": {"count": {"type": "integer", "title": "Entries", "minimum": 1, "maximum": 20, "default": 5}}}`)}, 0.7, 8192, entriesAppender},
 }
 
+// limits are the temperature and max tokens a's runs send: the instance's
+// settings, else the action's own.
+func (a action) limits(s settings) (temperature float64, maxTokens int) {
+	temperature, maxTokens = a.temperature, a.maxTokens
+	if s.Temperature != nil {
+		temperature = *s.Temperature
+	}
+	if s.MaxTokens != nil {
+		maxTokens = *s.MaxTokens
+	}
+	return temperature, maxTokens
+}
+
 func findAction(id string) (action, bool) {
 	i := slices.IndexFunc(actions, func(a action) bool { return a.ID == id })
 	if i < 0 {
@@ -263,8 +276,8 @@ type evaluation struct {
 	Summary      string   `json:"summary"`
 	OverallScore *float64 `json:"overall_score"`
 	Dimensions   map[string]struct {
-		Score   float64 `json:"score"`
-		Comment string  `json:"comment"`
+		Score   *float64 `json:"score"`
+		Comment string   `json:"comment"`
 	} `json:"dimensions"`
 	Contradictions []struct {
 		Fields []string `json:"fields"`
@@ -290,8 +303,8 @@ func report(obj map[string]json.RawMessage) (*protocol.Report, error) {
 	}
 	r := &protocol.Report{Summary: e.Summary, Score: e.OverallScore, Suggestions: e.Suggestions}
 	for _, d := range dimensions {
-		if v, ok := e.Dimensions[d.key]; ok {
-			r.Dimensions = append(r.Dimensions, protocol.ReportDimension{Key: d.key, Label: d.label, Score: v.Score, Comment: v.Comment})
+		if v, ok := e.Dimensions[d.key]; ok && v.Score != nil {
+			r.Dimensions = append(r.Dimensions, protocol.ReportDimension{Key: d.key, Label: d.label, Score: *v.Score, Comment: v.Comment})
 		}
 	}
 	for _, c := range e.Contradictions {

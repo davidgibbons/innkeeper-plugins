@@ -164,3 +164,73 @@ func TestEnrichmentsMatchDimensions(t *testing.T) {
 		t.Fatalf("enrichments %v, want %v", got, want)
 	}
 }
+
+func TestEnrichSkipsDimensionsWithoutAScore(t *testing.T) {
+	_, cfg := withLLM(t, streamed(`{"summary": "Thin.", "overall_score": 40, "dimensions": {
+"consistency": {"comment": "no score"}, "voice": {"score": null, "comment": "null"}, "roleplayability": {"score": 55}}}`))
+	h := startPlugin(t, cfg, nil)
+	res, err := h.enrich(t, enrichParams("Brakka"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := slices.Sorted(maps.Keys(res.Results[0].Values)); !slices.Equal(got, []string{"quality", "roleplayability"}) {
+		t.Fatalf("values %v, want only the scored keys", res.Results[0].Values)
+	}
+}
+
+func TestEnrichReportWithoutScoresIsAnError(t *testing.T) {
+	_, cfg := withLLM(t, streamed(`{"summary": "x"}`))
+	h := startPlugin(t, cfg, nil)
+	res, err := h.enrich(t, enrichParams("Brakka"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := res.Results[0]; r.Values != nil || !strings.Contains(r.Error, "no scores") {
+		t.Fatalf("result %+v, want a no-scores error", r)
+	}
+}
+
+func TestEnrichOffersNoTools(t *testing.T) {
+	llm, h := skillsHost(t, streamed(evaluated))
+	res, err := h.enrich(t, enrichParams("Brakka"))
+	if err != nil || res.Results[0].Error != "" {
+		t.Fatalf("results %+v: %v", res.Results, err)
+	}
+	if _, ok := llm.requests[0]["tools"]; ok || strings.Contains(systemPrompt(llm.requests[0]), "load_skill") {
+		t.Fatalf("enrich offered tools: %v", llm.requests[0]["tools"])
+	}
+}
+
+func TestEnrichPromptVersionFollowsTheSetup(t *testing.T) {
+	prompt := func(change func(map[string]any)) string {
+		t.Helper()
+		_, cfg := withLLM(t, streamed(evaluated))
+		change(cfg)
+		res, err := startPlugin(t, cfg, nil).enrich(t, enrichParams("Brakka"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var meta map[string]string
+		if err := json.Unmarshal(res.Results[0].Meta, &meta); err != nil {
+			t.Fatal(err)
+		}
+		return meta["prompt"]
+	}
+	base := prompt(func(map[string]any) {})
+	if again := prompt(func(map[string]any) {}); again != base {
+		t.Fatalf("same setup: %s then %s", base, again)
+	}
+	for name, change := range map[string]func(map[string]any){
+		"house_style": func(c map[string]any) { c["house_style"] = "British spelling." },
+		"addition":    func(c map[string]any) { c["additions"] = map[string]any{"evaluate": "Be harsh."} },
+		"temperature": func(c map[string]any) { c["temperature"] = 0.9 },
+		"max_tokens":  func(c map[string]any) { c["max_tokens"] = 1000 },
+	} {
+		if got := prompt(change); got == base {
+			t.Errorf("changing %s kept prompt %s", name, got)
+		}
+	}
+	if other := prompt(func(c map[string]any) { c["additions"] = map[string]any{"revise": "x"} }); other != base {
+		t.Errorf("another action's addition changed the prompt version")
+	}
+}
