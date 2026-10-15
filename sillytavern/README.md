@@ -57,6 +57,9 @@ or secrets.
   save adds defaults to every entry.
 - Importing from SillyTavern takes each character's world link and its
   image, except the placeholder of a card pushed without one.
+- Deletes, when you archive a card or lorebook and choose to delete it from
+  linked apps. Deleting a character also deletes its chats in SillyTavern,
+  and this can't be undone.
 
 The plugin keeps its own keys in `extensions.innkeeper` on characters, world
 files, and entries. Leave them alone. SillyTavern's "Duplicate" copies them, so

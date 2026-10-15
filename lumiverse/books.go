@@ -144,6 +144,19 @@ func (p *plugin) list(ctx context.Context, path string) (protocol.TargetListResu
 	}
 }
 
+// remove deletes the character or world book under path named by params'
+// remote_id. Lumiverse answers 404 for one it doesn't have.
+func (p *plugin) remove(ctx context.Context, path string, params json.RawMessage) (any, error) {
+	var in protocol.TargetDeleteParams
+	if err := json.Unmarshal(params, &in); err != nil {
+		return nil, invalid(err)
+	}
+	if err := p.c.call(ctx, "DELETE", path+url.PathEscape(in.RemoteID), nil, nil); err != nil {
+		return nil, err
+	}
+	return struct{}{}, nil
+}
+
 // clearEntries deletes every entry of a world book.
 func (p *plugin) clearEntries(ctx context.Context, id string) error {
 	for {

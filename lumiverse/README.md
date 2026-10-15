@@ -29,6 +29,9 @@ Innkeeper server out of all of Lumiverse for 15 minutes or more.
 - Lorebooks as world books, linked to their characters. Pushing a lorebook
   replaces its world book's entries and keeps its ID. Reading a character
   returns the world books it links to.
+- Deletes, when you archive a card or lorebook and choose to delete it from
+  linked apps. Deleting a character also deletes its one-on-one chats in
+  Lumiverse, and this can't be undone.
 
 Lumiverse stores CCv3 fields it has no place for in the plugin's own keys:
 `extensions.innkeeper` on characters and entries, and `metadata` on world

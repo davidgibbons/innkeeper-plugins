@@ -361,3 +361,19 @@ func TestADeletedEntryLeavesNoDisplayIndex(t *testing.T) {
 		}
 	}
 }
+
+func TestDeleteWorldFile(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(f)
+	id := putBook(t, p, "k", testBook("Forge lore", testEntry(1.0, "anvil", "It rings.", 1)))
+	del := mustJSON(t, protocol.TargetDeleteParams{RemoteID: id})
+	if _, err := p.removeLorebook(context.Background(), del); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.worlds) != 0 {
+		t.Fatalf("worlds = %v", f.worlds)
+	}
+	if _, err := p.removeLorebook(context.Background(), del); !notFound(err) {
+		t.Fatalf("deleting it again: %v, want not found", err)
+	}
+}

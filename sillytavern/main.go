@@ -14,7 +14,7 @@ import (
 	"github.com/davidgibbons/innkeeper/protocol"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 type plugin struct {
 	c       *client
@@ -25,7 +25,7 @@ type plugin struct {
 func describe() protocol.TargetInfo {
 	return protocol.TargetInfo{
 		Fields: cardFields,
-		Pull:   true, Update: true, Lorebooks: protocol.LorebooksStandalone,
+		Pull:   true, Update: true, Delete: true, Lorebooks: protocol.LorebooksStandalone,
 		LorebookFields: []string{"name", "description", "scan_depth", "token_budget", "recursive_scanning",
 			"extensions", "entries"},
 	}
@@ -69,6 +69,10 @@ func main() {
 			return p.list(ctx)
 		case protocol.MethodTargetListLorebooks:
 			return p.listLorebooks(ctx)
+		case protocol.MethodTargetDelete:
+			return p.remove(ctx, params)
+		case protocol.MethodTargetDeleteLorebook:
+			return p.removeLorebook(ctx, params)
 		}
 		return nil, protocol.MethodNotFound(method)
 	}

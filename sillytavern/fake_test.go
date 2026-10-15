@@ -56,6 +56,8 @@ type fake struct {
 	avatars    map[string]int   // /edit-avatar uploads by file name
 	merges     []map[string]any // /merge-attributes bodies
 	worlds     map[string]map[string]any
+	// chatsDeleted is the delete_chats of the latest /characters/delete.
+	chatsDeleted bool
 }
 
 type fakeSession struct {
@@ -83,6 +85,24 @@ func newFake(t *testing.T) *fake {
 		"/api/worldinfo/list":              f.worldList,
 		"/api/worldinfo/get":               f.worldGet,
 		"/api/worldinfo/edit":              f.worldEdit,
+		"/api/characters/delete": func(w http.ResponseWriter, r *http.Request) {
+			b := body(r)
+			file, _ := b["avatar_url"].(string)
+			if _, ok := f.characters[file]; !ok {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			delete(f.characters, file)
+			f.chatsDeleted = b["delete_chats"] == true
+		},
+		"/api/worldinfo/delete": func(w http.ResponseWriter, r *http.Request) {
+			name, _ := body(r)["name"].(string)
+			if _, ok := f.worlds[name]; !ok {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			delete(f.worlds, name)
+		},
 	} {
 		mux.HandleFunc("POST "+path, f.private(h))
 	}

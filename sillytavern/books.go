@@ -139,6 +139,26 @@ func (f worldFile) key() string {
 	return k
 }
 
+// removeLorebook deletes a world file. SillyTavern's delete fails with a 500
+// for a missing file, so look for it first.
+func (p *plugin) removeLorebook(ctx context.Context, params json.RawMessage) (any, error) {
+	var in protocol.TargetDeleteParams
+	if err := json.Unmarshal(params, &in); err != nil {
+		return nil, invalid(err)
+	}
+	files, err := p.worldFiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.ContainsFunc(files, func(f worldFile) bool { return f.FileID == in.RemoteID }) {
+		return nil, missingWorld(in.RemoteID)
+	}
+	if err := p.c.call(ctx, "/api/worldinfo/delete", map[string]any{"name": in.RemoteID}, nil); err != nil {
+		return nil, err
+	}
+	return struct{}{}, nil
+}
+
 func missingWorld(id string) error {
 	return protocol.NewError(protocol.CodeRemoteNotFound, id+": no such world file", false)
 }

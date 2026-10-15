@@ -339,3 +339,19 @@ func TestListCharacters(t *testing.T) {
 		}
 	}
 }
+
+func TestDeleteCharacterAndItsChats(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(f)
+	id := put(t, p, protocol.TargetPutParams{Card: testCard(nil), Key: "k1"})
+	del := mustJSON(t, protocol.TargetDeleteParams{RemoteID: id})
+	if _, err := p.remove(context.Background(), del); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.characters) != 0 || !f.chatsDeleted {
+		t.Fatalf("characters = %v, chats deleted = %v", f.characters, f.chatsDeleted)
+	}
+	if _, err := p.remove(context.Background(), del); !notFound(err) {
+		t.Fatalf("deleting it again: %v, want not found", err)
+	}
+}

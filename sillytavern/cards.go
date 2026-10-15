@@ -82,6 +82,22 @@ func (p *plugin) put(ctx context.Context, params json.RawMessage) (any, error) {
 	return protocol.TargetPutResult{RemoteID: id}, nil
 }
 
+// remove deletes a character and its chats. SillyTavern's delete answers 400
+// for a missing character, so read it first to tell that apart.
+func (p *plugin) remove(ctx context.Context, params json.RawMessage) (any, error) {
+	var in protocol.TargetDeleteParams
+	if err := json.Unmarshal(params, &in); err != nil {
+		return nil, invalid(err)
+	}
+	if _, err := p.read(ctx, in.RemoteID); err != nil {
+		return nil, err
+	}
+	if err := p.c.call(ctx, "/api/characters/delete", map[string]any{"avatar_url": in.RemoteID, "delete_chats": true}, nil); err != nil {
+		return nil, err
+	}
+	return struct{}{}, nil
+}
+
 // read returns character id as SillyTavern stores it.
 func (p *plugin) read(ctx context.Context, id string) (map[string]any, error) {
 	var r map[string]any

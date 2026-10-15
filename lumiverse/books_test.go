@@ -196,3 +196,15 @@ func TestListWorldBooks(t *testing.T) {
 		t.Fatalf("listed %d items, %d distinct", len(res.Items), len(seen))
 	}
 }
+
+func TestDeleteWorldBook(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(t, f, "owner", fakePassword)
+	id := putBook(t, p, protocol.TargetPutLorebookParams{Lorebook: lorebook(), Key: "k1"})
+	if _, err := p.remove(context.Background(), "/world-books/", mustJSON(t, protocol.TargetDeleteParams{RemoteID: id})); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.books) != 0 || len(f.entries) != 0 {
+		t.Fatalf("books = %v, entries = %v", f.books, f.entries)
+	}
+}

@@ -14,7 +14,7 @@ import (
 	"github.com/davidgibbons/innkeeper/protocol"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 type plugin struct {
 	c       *client
@@ -27,7 +27,7 @@ func describe() protocol.TargetInfo {
 		Fields: []string{"name", "description", "personality", "scenario", "first_mes", "mes_example", "creator",
 			"creator_notes", "system_prompt", "post_history_instructions", "alternate_greetings", "tags",
 			"character_version", "extensions"},
-		Pull: true, Update: true, Lorebooks: protocol.LorebooksStandalone,
+		Pull: true, Update: true, Delete: true, Lorebooks: protocol.LorebooksStandalone,
 		LorebookFields: []string{"name", "description", "scan_depth", "token_budget", "recursive_scanning",
 			"extensions", "entries"},
 	}
@@ -73,6 +73,11 @@ func main() {
 			// ponytail: Lumiverse orders these by updated_at only, so a book
 			// edited mid-listing can be skipped or repeated.
 			return p.list(ctx, "/world-books?")
+		case protocol.MethodTargetDelete:
+			// Lumiverse deletes the character's one-on-one chats with it.
+			return p.remove(ctx, "/characters/", params)
+		case protocol.MethodTargetDeleteLorebook:
+			return p.remove(ctx, "/world-books/", params)
 		}
 		return nil, protocol.MethodNotFound(method)
 	}

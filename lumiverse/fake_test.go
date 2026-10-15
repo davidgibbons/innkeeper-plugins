@@ -46,6 +46,19 @@ func newFake(t *testing.T) *fake {
 		"POST /characters/{id}/avatar":        f.avatar,
 		"GET /characters/{id}/avatar":         f.getAvatar,
 		"GET /characters/{id}/export":         f.exportCharacter,
+		"DELETE /characters/{id}": func(w http.ResponseWriter, r *http.Request) {
+			if f.character(w, r) != nil {
+				delete(f.characters, r.PathValue("id"))
+				reply(w, 200, map[string]any{"success": true})
+			}
+		},
+		"DELETE /world-books/{id}": func(w http.ResponseWriter, r *http.Request) {
+			if f.book(w, r) != nil {
+				delete(f.books, r.PathValue("id"))
+				delete(f.entries, r.PathValue("id"))
+				reply(w, 200, map[string]any{"success": true})
+			}
+		},
 		"POST /world-books":                   f.createBook,
 		"GET /world-books":                    f.listBooks,
 		"GET /world-books/{id}":               f.getBook,

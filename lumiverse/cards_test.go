@@ -276,3 +276,19 @@ func TestGetDoesNotFetchTheAvatarUnlessAsked(t *testing.T) {
 		t.Fatalf("%d avatar requests: %v", f.avatarGets, err)
 	}
 }
+
+func TestDeleteCharacter(t *testing.T) {
+	f := newFake(t)
+	p := newPlugin(t, f, "owner", fakePassword)
+	id := put(t, p, protocol.TargetPutParams{Card: card(nil), Key: "k1"})
+	del := mustJSON(t, protocol.TargetDeleteParams{RemoteID: id})
+	if _, err := p.remove(context.Background(), "/characters/", del); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.characters) != 0 {
+		t.Fatalf("characters = %v", f.characters)
+	}
+	if _, err := p.remove(context.Background(), "/characters/", del); !notFound(err) {
+		t.Fatalf("deleting it again: %v, want not found", err)
+	}
+}
