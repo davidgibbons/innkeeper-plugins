@@ -34,6 +34,10 @@ func TestTavern(t *testing.T) {
 			t.Errorf("%s: err = %v, want invalid params", page, err)
 		}
 	}
+	_, err = importURL(t, f, "https://character-tavern.com/character/ann/missing")
+	if e := rpcErr(t, err); e.Code != protocol.CodeRemoteNotFound || e.Retryable() {
+		t.Errorf("missing card: err = %v, want -32004", err)
+	}
 }
 
 func TestTavernHTML(t *testing.T) {

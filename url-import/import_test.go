@@ -118,6 +118,7 @@ func TestJanitor(t *testing.T) {
 func TestFetchErrors(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET example.test/404", func(w http.ResponseWriter, _ *http.Request) { http.NotFound(w, nil) })
+	mux.HandleFunc("GET example.test/410", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusGone) })
 	mux.HandleFunc("GET example.test/403", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusForbidden) })
 	mux.HandleFunc("GET example.test/429", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTooManyRequests) })
 	mux.HandleFunc("GET example.test/503", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) })
@@ -137,10 +138,15 @@ func TestFetchErrors(t *testing.T) {
 	})
 	mux.HandleFunc("GET example.test/ua", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(r.UserAgent())) })
 	f := sites(t, mux)
-	for path, retry := range map[string]bool{"404": false, "403": false, "429": true, "503": true, "big": false, "drop": true, "redir": false} {
+	for path, retry := range map[string]bool{"404": false, "410": false, "403": false, "429": true, "503": true, "big": false, "drop": true, "redir": false} {
 		_, err := f.get(context.Background(), "Example", "https://example.test/"+path)
-		if e := rpcErr(t, err); e.Retryable() != retry {
+		e := rpcErr(t, err)
+		if e.Retryable() != retry {
 			t.Errorf("%s: retryable = %v, want %v (%v)", path, e.Retryable(), retry, err)
+		}
+		// A Cloudflare block (403) must never mark a card gone.
+		if wantGone := path == "404" || path == "410"; (e.Code == protocol.CodeRemoteNotFound) != wantGone {
+			t.Errorf("%s: code = %d, want -32004 only for 404 and 410", path, e.Code)
 		}
 	}
 	if _, err := f.get(context.Background(), "Example", "https://example.test/404"); !strings.Contains(err.Error(), "not found on Example") {
