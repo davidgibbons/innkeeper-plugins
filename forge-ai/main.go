@@ -179,7 +179,7 @@ var labels = map[string]string{"name": "Name", "description": "Description", "pe
 // progress returns a callback for one request that sends one progress
 // message per key of the run's as the model starts writing it.
 func (srv *server) progress(r *run) func(string) {
-	if r.appends != "" {
+	if r.appends != nil {
 		return srv.itemProgress(r)
 	}
 	keys := r.writes()
@@ -202,17 +202,14 @@ func (srv *server) progress(r *run) func(string) {
 	}
 }
 
-// itemLabels name the items an action appends, in progress messages.
-var itemLabels = map[string]string{"alternate_greetings": "greeting", "entries": "entry"}
-
 // itemProgress returns a callback for one request that sends one progress
 // message per item, up to the run's count, as the model starts writing it.
 func (srv *server) itemProgress(r *run) func(string) {
 	announced := 0
 	return func(output string) {
-		for n := min(startedItems(output, r.appends), r.count); announced < n; announced++ {
+		for n := min(startedItems(output, r.appends.key), r.count); announced < n; announced++ {
 			_ = srv.conn.Notify(protocol.NotifyProgress, protocol.Progress{Run: r.Run, Done: int64(announced),
-				Total: int64(r.count), Message: fmt.Sprintf("Writing %s %d of %d", itemLabels[r.appends], announced+1, r.count)})
+				Total: int64(r.count), Message: fmt.Sprintf("Writing %s %d of %d", r.appends.item, announced+1, r.count)})
 		}
 	}
 }

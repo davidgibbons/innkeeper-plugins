@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/davidgibbons/innkeeper/protocol"
@@ -178,28 +180,65 @@ func TestAlternateGreetingsOnACardWithoutAny(t *testing.T) {
 
 func TestLoreEntriesKeepExistingAndAppendNew(t *testing.T) {
 	out := `{"entries": [
-		{"comment": "The pass", "keys": ["BRAKKA", "Iron Pass", "iron pass"], "content": "A narrow road through the peaks."},
-		{"comment": "Repeat", "keys": ["the orc"], "content": "Only taken keys."},
+		{"comment": "The pass", "keys": ["BRAKKA", "Iron Pass"], "content": "Matches an existing entry's first key."},
+		{"comment": "Orcs", "keys": ["the orc", "Orcs", "Greenskins"], "content": "The orcs of the pass."},
+		{"comment": "Mostly taken", "keys": ["the orc", "orcs", "Tusks"], "content": "Two of three keys taken."},
 		{"comment": "Empty", "keys": ["Snow"], "content": " "},
-		{"keys": ["Billy"], "content": "Brakka's brother."}]}`
-	m := proposalOf(t, result(t, sampleRun(t, "lore-entries"), out))
+		{"keys": ["Billy", "billy"], "content": "Brakka's brother."}]}`
+	res := result(t, sampleRun(t, "lore-entries"), out)
+	m := proposalOf(t, res)
 	if m["name"] != "Northern Reach" || m["description"] != "The cold north." {
 		t.Fatalf("proposal %v", m)
 	}
-	entries, _ := m["entries"].([]any)
-	if len(entries) != 3 {
-		t.Fatalf("entries %v", entries)
-	}
-	var before struct{ Entries []any }
+	// The Forge's review compares entries as JSON text, so the existing one keeps its bytes.
+	var before struct{ Entries []json.RawMessage }
 	_ = json.Unmarshal([]byte(sampleLorebook), &before)
-	if !reflect.DeepEqual(entries[0], before.Entries[0]) {
-		t.Fatalf("existing entry changed: %v", entries[0])
+	var existing bytes.Buffer
+	_ = json.Compact(&existing, before.Entries[0])
+	if !bytes.Contains(res.Proposal, existing.Bytes()) {
+		t.Fatalf("existing entry %s changed in %s", existing.Bytes(), res.Proposal)
 	}
+	entries, _ := m["entries"].([]any)
 	added, _ := json.Marshal(entries[1:])
-	if string(added) != `[{"comment":"The pass","content":"A narrow road through the peaks.","enabled":true,"extensions":{},`+
-		`"insertion_order":100,"keys":["Iron Pass"],"position":"before_char","use_regex":false},`+
+	if string(added) != `[{"comment":"Orcs","content":"The orcs of the pass.","enabled":true,"extensions":{},`+
+		`"insertion_order":100,"keys":["Orcs","Greenskins"],"position":"before_char","use_regex":false},`+
 		`{"content":"Brakka's brother.","enabled":true,"extensions":{},"insertion_order":100,"keys":["Billy"],"position":"before_char","use_regex":false}]` {
 		t.Fatalf("added entries %s", added)
+	}
+}
+
+func TestLoreEntryWithoutKeyListStillReachesTheModel(t *testing.T) {
+	p := sampleRun(t, "lore-entries")
+	p.Entity.Data = json.RawMessage(`{"name": "Weather", "entries": [{"keys": "Snow", "content": "It always snows."}, "not an entry"]}`)
+	r, err := parseRun(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, user, err := r.prompts(settings{}); err != nil || !strings.Contains(user, "It always snows.") {
+		t.Fatalf("user prompt %q, err %v", user, err)
+	}
+	res, err := r.result(`{"entries": [{"keys": ["Snow"], "content": "Snow falls at night."}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(res.Proposal, []byte(`"not an entry"`)) || !bytes.Contains(res.Proposal, []byte(`"keys":["Snow"],"content":"Snow falls at night."`)) {
+		t.Fatalf("proposal %s", res.Proposal)
+	}
+}
+
+func TestAppendThatAddsNothingLeavesTheDraft(t *testing.T) {
+	for action, out := range map[string]string{
+		"alternate-greetings": `{"alternate_greetings": []}`,
+		"lore-entries":        `{"entries": [{"keys": ["Brakka"], "content": "Taken."}]}`,
+	} {
+		p := sampleRun(t, action)
+		res := result(t, p, out)
+		var got, want any
+		_ = json.Unmarshal(res.Proposal, &got)
+		_ = json.Unmarshal(p.Entity.Data, &want)
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: proposal %s, want the draft", action, res.Proposal)
+		}
 	}
 }
 

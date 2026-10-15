@@ -16,7 +16,7 @@ const sampleCard = `{"name": "Brakka", "description": "A very big, very tall orc
 
 // sampleLorebook has one entry, with an id the proposal must keep.
 const sampleLorebook = `{"name": "Northern Reach", "description": "The cold north.", "entries": [{"id": 1, "keys": ["Brakka", "the orc"],
-	"content": "Brakka guards the pass.", "enabled": true, "insertion_order": 50, "use_regex": false, "extensions": {"depth": 4}}]}`
+	"content": "Brakka guards the pass & the gate.", "enabled": true, "insertion_order": 50, "use_regex": false, "extensions": {"depth": 4}}]}`
 
 // sampleRun is a valid run of the action id on sampleCard, or for a lorebook
 // action on sampleLorebook with sampleCard attached.
@@ -115,7 +115,7 @@ func TestPromptsCarryRunInputs(t *testing.T) {
 	p = sampleRun(t, "lore-entries")
 	p.Instruction = "the guards of the pass"
 	system, user, _ := render(t, p, settings{})
-	for _, want := range []string{"Write 5 new entries", "the guards of the pass", "Northern Reach", "Brakka guards the pass.", "Card: Brakka"} {
+	for _, want := range []string{"Write 5 new entries", "the guards of the pass", "Northern Reach", "Brakka guards the pass & the gate.", "Card: Brakka"} {
 		if !strings.Contains(system+user, want) {
 			t.Errorf("lore-entries: prompt lacks %q:\n%s\n%s", want, system, user)
 		}

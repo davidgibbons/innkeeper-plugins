@@ -30,8 +30,10 @@ Whole-card actions send the model only the card's prose keys, `name`, and
 `lore-entries` sends the lorebook's name, description, and each entry's
 `comment`, `keys`, and `content`. Existing entries stay as they were. A new
 entry has no `id`, `enabled` true, `insertion_order` 100, `position`
-`before_char`, and no regex. A key an earlier entry already has is dropped,
-ignoring case, and so is an entry left without keys.
+`before_char`, and no regex. Keys compare ignoring case. A new entry is
+dropped when one of its keys is an earlier entry's first key or more than
+half its keys are taken; otherwise it loses only its taken keys. A run that
+adds nothing proposes the lorebook unchanged.
 
 ## Prompts
 

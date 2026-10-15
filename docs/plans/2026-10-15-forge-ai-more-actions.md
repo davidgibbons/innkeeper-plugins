@@ -16,9 +16,10 @@ core's lorebook Forge is planned in core
 | `lore-entries` | `applies = "lorebook"`, `instruction = true`, input `count` (1 to 20, default 5), library access. The instruction is the focus and carries the `@cards/` mentions that attach the source card. It is the lorebook's only instruction action, so the core's Reforge box runs it. |
 | New entries | The model returns `comment`, `keys`, and `content` per entry. The plugin adds the defaults core's blank entry has (`enabled: true`, `insertion_order: 100`, `position: "before_char"`, `extensions: {}`) plus `use_regex: false`, which CCv3 requires. No `id`: the protocol asks a lorebook action to leave it off new entries. |
 | Existing entries | Kept byte for byte, `id`s included. The model sees each one's `comment`, `keys`, and `content` only. |
-| Duplicate keys | A new entry's keys that an existing entry already has, ignoring case, are dropped; an entry left with no keys is dropped. |
+| Duplicate keys | Ignoring case. A new entry is dropped when one of its keys is an earlier entry's first key or more than half its keys are taken; otherwise it loses only its taken keys. An existing entry whose `keys` isn't a list of text counts as having none. |
+| Nothing added | The proposal is the draft unchanged. |
 | Progress | One message per greeting or entry as the model starts it, out of `count`. |
-| Shape | Each action declares the data key it appends to (`appends`). Append actions build their proposal from the draft plus the new items, not by replacing keys. |
+| Shape | An append action declares an `appender`: its data key, its item's name, and how it merges the model's items into the draft. |
 | Version | 0.3.0 in `plugin.toml`, `main.go`, and `index.toml`. |
 
 ## Tasks
