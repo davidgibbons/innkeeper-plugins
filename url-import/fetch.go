@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"sync"
 	"syscall"
 	"time"
 
@@ -21,12 +22,42 @@ import (
 const maxBody = pluginio.MaxInput
 
 // fetcher makes the plugin's requests to sites.
-type fetcher struct{ http *http.Client }
+type fetcher struct {
+	http *http.Client
+	gap  time.Duration // the least time between two requests to one host
+
+	mu   sync.Mutex
+	next map[string]time.Time // when each host may next be asked
+}
 
 func newFetcher() *fetcher {
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.DialContext = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: refusePrivate}).DialContext
-	return &fetcher{http: &http.Client{Timeout: 30 * time.Second, CheckRedirect: httpsOnly, Transport: tr}}
+	return &fetcher{http: &http.Client{Timeout: 30 * time.Second, CheckRedirect: httpsOnly, Transport: tr}, gap: time.Second}
+}
+
+// wait holds a request to host until gap has passed since the last one.
+// ponytail: one gap for every site and none for redirects; per-site gaps if a site asks for more.
+func (f *fetcher) wait(ctx context.Context, host string) error {
+	if f.gap == 0 {
+		return nil
+	}
+	f.mu.Lock()
+	at := time.Now()
+	if n := f.next[host]; n.After(at) {
+		at = n
+	}
+	if f.next == nil {
+		f.next = map[string]time.Time{}
+	}
+	f.next[host] = at.Add(f.gap)
+	f.mu.Unlock()
+	select {
+	case <-time.After(time.Until(at)):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 var errPrivate = errors.New("refused to connect to a private address")
@@ -67,6 +98,9 @@ func (f *fetcher) get(ctx context.Context, site, url string) ([]byte, error) {
 	}
 	if req.URL.Scheme != "https" {
 		return nil, permanent(fmt.Errorf("%s: refusing non-https URL %s", site, req.URL.Redacted()))
+	}
+	if err := f.wait(ctx, req.URL.Host); err != nil {
+		return nil, err
 	}
 	// chub.ai blocks curl/ agents, and JanitorAI blocks Go's default.
 	req.Header.Set("User-Agent", "innkeeper-url-import/"+version)
