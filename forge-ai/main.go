@@ -1,6 +1,6 @@
-// Command forge-ai is an action plugin. It writes, revises, tightens, and
-// evaluates character cards, and adds lorebook entries, with a language
-// model, through any-llm-go.
+// Command forge-ai is an action plugin. It writes, revises, tightens,
+// evaluates, and scores character cards, and adds lorebook entries, with a
+// language model, through any-llm-go.
 package main
 
 import (
@@ -15,7 +15,7 @@ import (
 	anyllm "github.com/mozilla-ai/any-llm-go"
 )
 
-const version = "0.3.0"
+const version = "0.4.0"
 
 // instance is the model setup initialize configured. err is a settings
 // problem, reported by the first run. store is nil without a database_url.
@@ -61,14 +61,14 @@ func (srv *server) handle(ctx context.Context, method string, params json.RawMes
 		}
 		srv.cur.Store(in)
 		return protocol.InitializeResult{Protocol: protocol.Version, Name: "forge-ai", Version: version,
-			Capabilities: []string{"action", "records"}}, nil
+			Capabilities: []string{"action", "records", "enrich"}}, nil
 	case protocol.MethodShutdown:
 		if in := srv.cur.Load(); in != nil && in.store != nil {
 			in.store.close()
 		}
 		return nil, nil
 	case protocol.MethodActionList, protocol.MethodActionRun, protocol.MethodRecordsList, protocol.MethodRecordsGet,
-		protocol.MethodRecordsPut, protocol.MethodRecordsDelete, protocol.MethodRecordsImport:
+		protocol.MethodRecordsPut, protocol.MethodRecordsDelete, protocol.MethodRecordsImport, protocol.MethodEnrichRun:
 	default:
 		return nil, protocol.MethodNotFound(method)
 	}
@@ -81,6 +81,8 @@ func (srv *server) handle(ctx context.Context, method string, params json.RawMes
 		return actionList(ctx, in)
 	case protocol.MethodActionRun:
 		return srv.run(ctx, in, params)
+	case protocol.MethodEnrichRun:
+		return srv.enrich(ctx, in, params)
 	}
 	return srv.records(ctx, in, method, params)
 }
@@ -113,6 +115,12 @@ func (srv *server) run(ctx context.Context, in *instance, params json.RawMessage
 	if in.err != nil {
 		return nil, in.err
 	}
+	return srv.execute(ctx, in, r, func() func(string) { return srv.progress(r) })
+}
+
+// execute runs a checked action to its result. newProgress gives each
+// request to the model its own progress callback.
+func (srv *server) execute(ctx context.Context, in *instance, r *run, newProgress func() func(string)) (*protocol.ActionRunResult, error) {
 	system, user, err := r.prompts(in.settings)
 	if err != nil {
 		return nil, err
@@ -157,7 +165,7 @@ func (srv *server) run(ctx context.Context, in *instance, params json.RawMessage
 	if r.Library {
 		lib = coreLibrary(srv.conn, r.Run)
 	}
-	output, err := complete(ctx, in, req, in.tools(enabled, lib), func() func(string) { return srv.progress(r) })
+	output, err := complete(ctx, in, req, in.tools(enabled, lib), newProgress)
 	if err != nil {
 		return nil, err
 	}

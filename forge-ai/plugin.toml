@@ -1,8 +1,8 @@
 name = "forge-ai"
-version = "0.3.0"
+version = "0.4.0"
 protocol = 1
 command = ["./forge-ai"]
-capabilities = ["action", "records"]
+capabilities = ["action", "records", "enrich"]
 secrets = ["api_key"]
 database = true
 
@@ -58,6 +58,15 @@ rewrite = { type = "string", title = "Rewrite" }
 examples = { type = "string", title = "Write examples" }
 alternate-greetings = { type = "string", title = "Write alternate greetings" }
 lore-entries = { type = "string", title = "Write lore entries" }
+
+[enrichments]
+quality = { type = "score", range = [0, 100], label = "Quality", grid = true }
+consistency = { type = "score", range = [0, 100], label = "Consistency" }
+voice = { type = "score", range = [0, 100], label = "Voice" }
+first_impression = { type = "score", range = [0, 100], label = "First impression" }
+roleplayability = { type = "score", range = [0, 100], label = "Roleplayability" }
+token_efficiency = { type = "score", range = [0, 100], label = "Token efficiency" }
+field_governance = { type = "score", range = [0, 100], label = "Field governance" }
 
 [records.skill]
 label = "Skills"
