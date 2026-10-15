@@ -15,7 +15,9 @@ section "forge-ai". Protocol: core `docs/protocol.md`, section `enrich`.
 | Code path | `enrich.run` runs each revision as an `evaluate` action run through the same prompt, completion, and report parsing as `action.run`. |
 | Batch | Sequential, one model call per revision. A failed call or unparsable report becomes that revision's `error`; the rest go on. A settings error fails the whole call. |
 | Range | Scores outside 0 to 100 are clamped to the nearest end. |
-| `meta` | `{"model", "prompt"}`; `prompt` is `evaluate-` plus a short hash of `prompts/evaluate.tmpl`, so it changes whenever the prompt does. |
+| Missing scores | A dimension with no score, missing or `null`, is left out of the report and the values. |
+| Tools | None: no skills, no library, so no skills query and no retry without tools per card. |
+| `meta` | `{"model", "prompt"}`; `prompt` is `evaluate-` plus a short hash of `prompts/evaluate.tmpl`, `house_style`, `additions.evaluate`, and the temperature and max tokens sent, so it changes whenever the setup does. |
 | Progress | `Evaluating {name} (n of m)` before each revision. |
 | Cancel | Checked before each revision; a cancel during a call aborts it and ends the batch. |
 | Version | 0.4.0 in `plugin.toml`, `main.go`, and `index.toml`. |

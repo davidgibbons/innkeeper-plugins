@@ -46,10 +46,16 @@ picks, one model call per card, and stores its scores, all 0 to 100:
 | `quality` | The overall score, shown on the library grid |
 | `consistency`, `voice`, `first_impression`, `roleplayability`, `token_efficiency`, `field_governance` | Each evaluate dimension |
 
-A score outside 0 to 100 is clamped to the nearest end. A card whose model
-call fails, or whose reply has no scores, stores nothing and shows the
-error; the other cards still get scored. Each value records the model and
-the prompt's version, `evaluate-` plus a hash of `prompts/evaluate.tmpl`.
+A score outside 0 to 100 is clamped to the nearest end, and a dimension
+the model gave no score is left out. A card whose model call fails, or
+whose reply has no scores, stores nothing and shows the error; the other
+cards still get scored. Scoring offers the model no tools: no skills and no
+library.
+
+Each value records the model and the prompt's version: `evaluate-` plus a
+hash of `prompts/evaluate.tmpl`, `house_style`, `additions.evaluate`, and
+the temperature and max tokens sent. Scores whose versions differ came from
+different setups.
 
 ## Prompts
 
