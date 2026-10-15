@@ -38,6 +38,7 @@ func openStore(ctx context.Context, dsn, instance string) (*store, error) {
 	description text NOT NULL,
 	body text NOT NULL,
 	files jsonb NOT NULL DEFAULT '{}',
+	enabled boolean NOT NULL DEFAULT true,
 	PRIMARY KEY (instance, name))`)
 		}
 		return err
@@ -51,21 +52,21 @@ func openStore(ctx context.Context, dsn, instance string) (*store, error) {
 
 func (s *store) close() { s.pool.Close() }
 
-// summaries lists skills without bodies or files, by name. With names, only
-// those skills.
-func (s *store) summaries(ctx context.Context, names []string) ([]skill, error) {
-	rows, _ := s.pool.Query(ctx, `SELECT name, description FROM skill
-		WHERE instance = $1 AND ($2::text[] IS NULL OR name = ANY($2)) ORDER BY name`, s.instance, names)
+// summaries lists skills without bodies or files, by name; with
+// enabledOnly, only the enabled ones.
+func (s *store) summaries(ctx context.Context, enabledOnly bool) ([]skill, error) {
+	rows, _ := s.pool.Query(ctx, `SELECT name, description, enabled FROM skill
+		WHERE instance = $1 AND (enabled OR NOT $2) ORDER BY name`, s.instance, enabledOnly)
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (skill, error) {
 		var sk skill
-		return sk, row.Scan(&sk.Name, &sk.Description)
+		return sk, row.Scan(&sk.Name, &sk.Description, &sk.Enabled)
 	})
 }
 
 func (s *store) get(ctx context.Context, name string) (skill, error) {
 	var sk skill
-	err := s.pool.QueryRow(ctx, `SELECT name, description, body, files FROM skill WHERE instance = $1 AND name = $2`,
-		s.instance, name).Scan(&sk.Name, &sk.Description, &sk.Body, &sk.Files)
+	err := s.pool.QueryRow(ctx, `SELECT name, description, body, files, enabled FROM skill WHERE instance = $1 AND name = $2`,
+		s.instance, name).Scan(&sk.Name, &sk.Description, &sk.Body, &sk.Files, &sk.Enabled)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return sk, errSkillNotFound
 	}
@@ -74,24 +75,25 @@ func (s *store) get(ctx context.Context, name string) (skill, error) {
 
 // create adds sk, refusing to overwrite a skill of the same name.
 func (s *store) create(ctx context.Context, sk skill) error {
-	_, err := s.pool.Exec(ctx, `INSERT INTO skill (instance, name, description, body, files) VALUES ($1, $2, $3, $4, $5)`,
-		s.instance, sk.Name, sk.Description, sk.Body, files(sk))
+	_, err := s.pool.Exec(ctx, `INSERT INTO skill (instance, name, description, body, files, enabled) VALUES ($1, $2, $3, $4, $5, $6)`,
+		s.instance, sk.Name, sk.Description, sk.Body, files(sk), sk.Enabled)
 	return uniqueAsExists(err)
 }
 
 // replace overwrites the skill named name with sk, which may rename it.
 func (s *store) replace(ctx context.Context, name string, sk skill) error {
-	tag, err := s.pool.Exec(ctx, `UPDATE skill SET name = $3, description = $4, body = $5, files = $6
-		WHERE instance = $1 AND name = $2`, s.instance, name, sk.Name, sk.Description, sk.Body, files(sk))
+	tag, err := s.pool.Exec(ctx, `UPDATE skill SET name = $3, description = $4, body = $5, files = $6, enabled = $7
+		WHERE instance = $1 AND name = $2`, s.instance, name, sk.Name, sk.Description, sk.Body, files(sk), sk.Enabled)
 	if err == nil && tag.RowsAffected() == 0 {
 		return errSkillNotFound
 	}
 	return uniqueAsExists(err)
 }
 
-// upsert adds sk or replaces the skill of the same name, for imports.
+// upsert adds sk or replaces the skill of the same name, for imports. A
+// replaced skill keeps its enablement.
 func (s *store) upsert(ctx context.Context, sk skill) error {
-	_, err := s.pool.Exec(ctx, `INSERT INTO skill (instance, name, description, body, files) VALUES ($1, $2, $3, $4, $5)
+	_, err := s.pool.Exec(ctx, `INSERT INTO skill (instance, name, description, body, files, enabled) VALUES ($1, $2, $3, $4, $5, true)
 		ON CONFLICT (instance, name) DO UPDATE SET description = $3, body = $4, files = $5`,
 		s.instance, sk.Name, sk.Description, sk.Body, files(sk))
 	return err

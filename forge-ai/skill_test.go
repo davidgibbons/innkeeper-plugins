@@ -5,9 +5,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"hash/crc32"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -117,22 +117,47 @@ func TestImportZipRefusesBadArchives(t *testing.T) {
 	wantInvalid(t, err, "entries")
 }
 
-func TestImportZipIgnoresLyingSizes(t *testing.T) {
-	big := []byte(strings.Repeat("a", maxFileSize+1))
+func TestImportZipStopsReadingAtTheLimit(t *testing.T) {
+	// 64 MiB of text deflates to well under the upload limit.
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	w, _ := zw.Create("SKILL.md")
 	w.Write([]byte(collegeMD))
-	// The header claims 1 byte; the stored data is over the limit.
-	w, err := zw.CreateRaw(&zip.FileHeader{Name: "big.md", Method: zip.Store, CRC32: crc32.ChecksumIEEE(big),
-		CompressedSize64: uint64(len(big)), UncompressedSize64: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	w.Write(big)
+	w, _ = zw.Create("big.md")
+	w.Write(bytes.Repeat([]byte("a"), 64<<20))
 	zw.Close()
-	_, err = parseUpload(buf.Bytes())
-	wantInvalid(t, err, "big.md")
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	_, err := parseUpload(buf.Bytes())
+	runtime.ReadMemStats(&after)
+	wantInvalid(t, err, "big.md is over 1 MiB")
+	if read := after.TotalAlloc - before.TotalAlloc; read > 16<<20 {
+		t.Fatalf("allocated %d MiB reading a zip with a 1 MiB file limit", read>>20)
+	}
+}
+
+func TestImportZipSkipsLargeBinaries(t *testing.T) {
+	png := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{0}, 2<<20)...)
+	s, err := parseUpload(zipOf(t, map[string]string{"college/SKILL.md": collegeMD, "college/assets/big.png": string(png)}))
+	if err != nil || len(s.Files) != 0 {
+		t.Fatalf("skill %+v, %v", s, err)
+	}
+}
+
+func TestImportZipRefusesBinarySkillMD(t *testing.T) {
+	_, err := parseUpload(zipOf(t, map[string]string{"SKILL.md": "---\nname: a\ndescription: b\n---\n\xff\xfe"}))
+	wantInvalid(t, err, "UTF-8")
+}
+
+func TestSkillCheckCapsBody(t *testing.T) {
+	err := skill{Name: "a", Description: "b", Body: strings.Repeat("a", maxFileSize+1)}.check()
+	wantInvalid(t, err, "instructions are over 1 MiB")
+}
+
+func TestHeadIsTextAllowsACutRune(t *testing.T) {
+	if !headIsText([]byte("caf\xc3")) || headIsText([]byte("caf\xff")) || headIsText([]byte("a\x00")) {
+		t.Fatal("headIsText")
+	}
 }
 
 func TestImportURL(t *testing.T) {

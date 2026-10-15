@@ -34,7 +34,7 @@ func (srv *server) records(ctx context.Context, in *instance, method string, par
 	}
 	switch method {
 	case protocol.MethodRecordsList:
-		skills, err := in.store.summaries(ctx, nil)
+		skills, err := in.store.summaries(ctx, false)
 		if err != nil {
 			return nil, err
 		}
@@ -51,7 +51,7 @@ func (srv *server) records(ctx context.Context, in *instance, method string, par
 		b, err := json.Marshal(sk)
 		return protocol.RecordsGetResult{Record: b}, err
 	case protocol.MethodRecordsPut:
-		var sk skill
+		sk := skill{Enabled: true}
 		if err := json.Unmarshal(p.Record, &sk); err != nil {
 			return nil, invalid("record: %v", err)
 		}

@@ -40,12 +40,6 @@ type = "string"
 title = "House style"
 description = "Added to every action's system prompt, such as \"British spelling; no em dashes\"."
 
-[config.properties.skills]
-type = "array"
-title = "Enabled skills"
-description = "Names of the skills the model may use, such as [\"college\"]. Renaming a skill removes it from this list."
-items = { type = "string" }
-
 [config.properties.additions]
 type = "object"
 title = "Additions"
@@ -73,4 +67,5 @@ required = ["name", "description", "body"]
 properties.name = { type = "string", title = "Name", description = "1 to 64 lowercase letters, digits, and single hyphens." }
 properties.description = { type = "string", title = "Description", description = "What the skill does and when to use it. The model reads this to decide whether to load it." }
 properties.body = { type = "string", title = "Instructions", contentMediaType = "text/markdown" }
+properties.enabled = { type = "boolean", title = "Enabled", description = "Offer this skill to the model. New and imported skills start enabled.", default = true }
 properties.files = { type = "object", title = "Reference files", description = "Text files the model can load, by path, such as {\"references/campus.md\": \"…\"}.", additionalProperties = { type = "string" } }

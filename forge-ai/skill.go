@@ -20,11 +20,14 @@ import (
 
 // skill is one Agent Skill (https://agentskills.io/specification): a
 // SKILL.md's frontmatter and body, and its text reference files by path.
+// A new skill is enabled, so an import is usable at once.
 type skill struct {
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
 	Body        string            `json:"body"`
 	Files       map[string]string `json:"files,omitempty"`
+	// Enabled skills reach the model.
+	Enabled bool `json:"enabled"`
 }
 
 // Import limits. Skills are prompt text, so these are generous for text and
@@ -45,22 +48,28 @@ func (s skill) check() error {
 	if len(s.Name) > 64 || !skillNamePattern.MatchString(s.Name) {
 		return invalid("skill name %q must be 1 to 64 lowercase letters, digits, and single hyphens, not starting or ending with a hyphen", s.Name)
 	}
-	if d := strings.TrimSpace(s.Description); d == "" || utf8.RuneCountInString(d) > 1024 {
-		return invalid("skill %s: description must be 1 to 1024 characters", s.Name)
+	if d := strings.TrimSpace(s.Description); d == "" || utf8.RuneCountInString(d) > 1024 || !isText([]byte(d)) {
+		return invalid("skill %s: description must be 1 to 1024 characters of text", s.Name)
 	}
 	if strings.TrimSpace(s.Body) == "" {
 		return invalid("skill %s: instructions are empty", s.Name)
+	}
+	if !isText([]byte(s.Body)) {
+		return invalid("skill %s: instructions must be UTF-8 text without NUL characters", s.Name)
+	}
+	if len(s.Body) > maxFileSize {
+		return invalid("skill %s: instructions are over %d MiB", s.Name, maxFileSize>>20)
 	}
 	if len(s.Files) > maxFiles {
 		return invalid("skill %s has %d reference files; the limit is %d", s.Name, len(s.Files), maxFiles)
 	}
 	total := len(s.Body)
 	for p, text := range s.Files {
-		if !localPath(p) || path.Clean(p) != p || p == "SKILL.md" {
+		if !isText([]byte(p)) || !localPath(p) || path.Clean(p) != p || p == "SKILL.md" {
 			return invalid("skill %s: reference file path %q must be relative, such as references/notes.md", s.Name, p)
 		}
 		if !isText([]byte(text)) {
-			return invalid("skill %s: %s isn't text", s.Name, p)
+			return invalid("skill %s: %s must be UTF-8 text without NUL characters", s.Name, p)
 		}
 		if len(text) > maxFileSize {
 			return invalid("skill %s: %s is over %d MiB", s.Name, p, maxFileSize>>20)
@@ -80,6 +89,23 @@ func localPath(p string) bool {
 
 func isText(b []byte) bool {
 	return utf8.Valid(b) && !bytes.ContainsRune(b, 0)
+}
+
+// sniffSize is how much of a zip entry decides whether it is text.
+const sniffSize = 8 << 10
+
+// headIsText reports whether h, the start of a file, may be text: no NUL,
+// and valid UTF-8 apart from a rune cut off at the end.
+func headIsText(h []byte) bool {
+	if bytes.IndexByte(h, 0) >= 0 {
+		return false
+	}
+	for k := 0; k < utf8.UTFMax && k <= len(h); k++ {
+		if utf8.Valid(h[:len(h)-k]) && (k == 0 || !utf8.FullRune(h[len(h)-k:])) {
+			return true
+		}
+	}
+	return false
 }
 
 // parseSkillMarkdown reads a SKILL.md: YAML frontmatter between --- lines,
@@ -107,7 +133,7 @@ func parseSkillMarkdown(b []byte) (skill, error) {
 	if err := yaml.Unmarshal([]byte(front), &meta); err != nil {
 		return skill{}, invalid("SKILL.md frontmatter: %v", err)
 	}
-	s := skill{Name: strings.TrimSpace(meta.Name), Description: strings.TrimSpace(meta.Description), Body: strings.TrimSpace(body)}
+	s := skill{Name: strings.TrimSpace(meta.Name), Description: strings.TrimSpace(meta.Description), Body: strings.TrimSpace(body), Enabled: true}
 	return s, s.check()
 }
 
@@ -152,19 +178,33 @@ func parseZip(b []byte) (skill, error) {
 		return skill{}, invalid("the zip holds no SKILL.md")
 	}
 	total := 0
+	// read returns f's text, or nil for a file that isn't text. Only text
+	// counts toward the limits, so a large image doesn't fail the import.
 	read := func(f *zip.File) ([]byte, error) {
 		rc, err := f.Open()
 		if err != nil {
 			return nil, invalid("%s: %v", f.Name, err)
 		}
 		defer rc.Close()
+		head := make([]byte, sniffSize)
+		n, err := io.ReadFull(rc, head)
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			return nil, invalid("%s: %v", f.Name, err)
+		}
+		if !headIsText(head[:n]) {
+			return nil, nil
+		}
 		// The header's size can lie, so the reader is what's limited.
-		b, err := io.ReadAll(io.LimitReader(rc, maxFileSize+1))
+		rest, err := io.ReadAll(io.LimitReader(rc, int64(maxFileSize+1-n)))
 		if err != nil {
 			return nil, invalid("%s: %v", f.Name, err)
 		}
+		b := append(head[:n], rest...)
 		if len(b) > maxFileSize {
 			return nil, invalid("%s is over %d MiB", f.Name, maxFileSize>>20)
+		}
+		if !isText(b) {
+			return nil, nil
 		}
 		if total += len(b); total > maxSkillSize {
 			return nil, invalid("the skill is over %d MiB", maxSkillSize>>20)
@@ -174,6 +214,9 @@ func parseZip(b []byte) (skill, error) {
 	mb, err := read(main)
 	if err != nil {
 		return skill{}, err
+	}
+	if mb == nil {
+		return skill{}, invalid("%s must be UTF-8 text without NUL characters", main.Name)
 	}
 	s, err := parseSkillMarkdown(mb)
 	if err != nil {
@@ -189,7 +232,7 @@ func parseZip(b []byte) (skill, error) {
 		if err != nil {
 			return skill{}, err
 		}
-		if !isText(fb) {
+		if fb == nil {
 			continue
 		}
 		if s.Files == nil {

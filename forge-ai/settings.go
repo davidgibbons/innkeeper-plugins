@@ -31,8 +31,6 @@ type settings struct {
 	MaxTokens   *int              `json:"max_tokens"`
 	HouseStyle  string            `json:"house_style"`
 	Additions   map[string]string `json:"additions"`
-	// Skills are the names of the enabled skills.
-	Skills []string `json:"skills"`
 }
 
 func parseSettings(cfg map[string]any) (settings, error) {

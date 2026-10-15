@@ -12,18 +12,22 @@ import (
 	anyllm "github.com/mozilla-ai/any-llm-go"
 )
 
-// enabledSkills are the stored skills the config enables, without bodies.
+// maxForced caps the forced skills' instructions in one prompt.
+const maxForced = 256 << 10
+
+// enabledSkills are the enabled skills, without bodies.
 func (in *instance) enabledSkills(ctx context.Context) ([]skill, error) {
-	if in.store == nil || len(in.settings.Skills) == 0 {
+	if in.store == nil {
 		return nil, nil
 	}
-	return in.store.summaries(ctx, in.settings.Skills)
+	return in.store.summaries(ctx, true)
 }
 
 // forcedSkills loads the skills a run's @skills/ mentions name, each of
 // which must be enabled.
 func (in *instance) forcedSkills(ctx context.Context, enabled []skill, names []string) ([]skill, error) {
 	var forced []skill
+	size := 0
 	for _, name := range names {
 		if slices.ContainsFunc(forced, func(sk skill) bool { return sk.Name == name }) {
 			continue
@@ -34,6 +38,9 @@ func (in *instance) forcedSkills(ctx context.Context, enabled []skill, names []s
 		sk, err := in.store.get(ctx, name)
 		if err != nil {
 			return nil, fmt.Errorf("load skill %s: %w", name, err)
+		}
+		if size += len(sk.Body); size > maxForced {
+			return nil, invalid("the mentioned skills' instructions are over %d KiB together; mention fewer", maxForced>>10)
 		}
 		forced = append(forced, sk)
 	}
@@ -49,6 +56,9 @@ func skillsPrompt(forced []skill) string {
 	b.WriteString("\n\n## Skills\n\nThe owner chose these skills for this task. Follow them.")
 	for _, sk := range forced {
 		fmt.Fprintf(&b, "\n\n### %s\n\n%s", sk.Name, sk.Body)
+		if len(sk.Files) > 0 {
+			b.WriteString("\n\nReference files: " + strings.Join(slices.Sorted(maps.Keys(sk.Files)), ", "))
+		}
 	}
 	return b.String()
 }

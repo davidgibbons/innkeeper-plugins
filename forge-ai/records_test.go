@@ -11,6 +11,7 @@ import (
 
 	"github.com/davidgibbons/innkeeper-plugins/internal/pgtest"
 	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/jackc/pgx/v5"
 )
 
 // startWithDB starts the plugin on a fresh schema as instance.
@@ -51,7 +52,7 @@ func wantCode(t *testing.T, err error, code int) {
 	}
 }
 
-var college = skill{Name: "college", Description: "Campus life.", Body: "# College", Files: map[string]string{"references/campus.md": "The quad."}}
+var college = skill{Name: "college", Description: "Campus life.", Body: "# College", Files: map[string]string{"references/campus.md": "The quad."}, Enabled: true}
 
 func TestRecordsRoundTrip(t *testing.T) {
 	dsn := pgtest.URL(t)
@@ -89,6 +90,10 @@ func TestRecordsRoundTrip(t *testing.T) {
 	wantCode(t, err, -32004)
 	err = h.call(protocol.MethodRecordsPut, map[string]any{"type": "skill", "record": skill{Name: "Bad Name", Description: "x", Body: "x"}}, nil)
 	wantCode(t, err, -32602)
+	err = h.call(protocol.MethodRecordsPut, map[string]any{"type": "skill", "record": skill{Name: "nul", Description: "x", Body: "a\x00b"}}, nil)
+	wantInvalid(t, err, "without NUL")
+	err = h.call(protocol.MethodRecordsPut, map[string]any{"type": "skill", "record": skill{Name: "nul", Description: "x\x00", Body: "b"}}, nil)
+	wantInvalid(t, err, "description")
 
 	if err := h.call(protocol.MethodRecordsDelete, protocol.RecordRef{Type: "skill", ID: "college"}, nil); err != nil {
 		t.Fatal(err)
@@ -139,10 +144,36 @@ func TestRecordsWithoutDatabase(t *testing.T) {
 	}
 }
 
+func TestPutWithoutEnabledEnablesTheSkill(t *testing.T) {
+	h := startWithDB(t, pgtest.URL(t), "i1", map[string]any{})
+	err := h.call(protocol.MethodRecordsPut, map[string]any{"type": "skill",
+		"record": map[string]any{"name": "college", "description": "x", "body": "y"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got protocol.RecordsGetResult
+	if err := h.call(protocol.MethodRecordsGet, protocol.RecordRef{Type: "skill", ID: "college"}, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got.Record), `"enabled":true`) {
+		t.Fatalf("record %s", got.Record)
+	}
+}
+
 func TestActionListEnabledSkills(t *testing.T) {
-	h := startWithDB(t, pgtest.URL(t), "i1", map[string]any{"skills": []string{"college", "missing"}})
+	h := startWithDB(t, pgtest.URL(t), "i1", map[string]any{})
 	h.put(t, "", college)
-	h.put(t, "", skill{Name: "disabled", Description: "Off.", Body: "x"})
+	h.put(t, "", skill{Name: "off", Description: "Off.", Body: "x"})
+	// A rename keeps the skill disabled.
+	h.put(t, "off", skill{Name: "disabled", Description: "Off.", Body: "x"})
+	// Reimporting a disabled skill leaves it disabled.
+	upload := filepath.Join(t.TempDir(), "upload")
+	if err := os.WriteFile(upload, []byte("---\nname: disabled\ndescription: Still off.\n---\nx"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.call(protocol.MethodRecordsImport, protocol.RecordsImportParams{Type: "skill", Path: upload, Name: "SKILL.md"}, nil); err != nil {
+		t.Fatal(err)
+	}
 	var res protocol.ActionListResult
 	if err := h.call(protocol.MethodActionList, nil, &res); err != nil {
 		t.Fatal(err)
@@ -156,7 +187,6 @@ func TestActionListEnabledSkills(t *testing.T) {
 func skillsHost(t *testing.T, replies ...fakeReply) (*fakeLLM, *host) {
 	t.Helper()
 	llm, cfg := withLLM(t, replies...)
-	cfg["skills"] = []string{"college"}
 	h := startWithDB(t, pgtest.URL(t), "i1", cfg)
 	h.put(t, "", college)
 	h.put(t, "", skill{Name: "disabled", Description: "Off.", Body: "Never sent."})
@@ -207,7 +237,7 @@ func TestForcedSkillInPrompt(t *testing.T) {
 	if _, err := h.run(t, p); err != nil {
 		t.Fatal(err)
 	}
-	if system := systemPrompt(llm.requests[0]); strings.Count(system, "### college\n\n# College") != 1 {
+	if system := systemPrompt(llm.requests[0]); strings.Count(system, "### college\n\n# College\n\nReference files: references/campus.md") != 1 {
 		t.Fatalf("system prompt %q", system)
 	}
 }
@@ -244,5 +274,46 @@ func TestLibraryActionGetsBothToolSets(t *testing.T) {
 	}
 	if tools := llm.requests[0]["tools"].([]any); len(tools) != len(libraryTools)+2 {
 		t.Fatalf("%d tools", len(tools))
+	}
+}
+
+func TestForcedSkillsCapped(t *testing.T) {
+	_, h := skillsHost(t)
+	big := skill{Name: "big", Description: "Big.", Body: strings.Repeat("a", maxForced/2+1), Enabled: true}
+	h.put(t, "", big)
+	big.Name = "big-two"
+	h.put(t, "", big)
+	p := sampleRun(t, "tighten")
+	p.Context.Skills = []string{"big", "big-two"}
+	_, err := h.run(t, p)
+	wantInvalid(t, err, "256 KiB")
+}
+
+func TestSkillsDatabaseErrorSparesActions(t *testing.T) {
+	dsn := pgtest.URL(t)
+	llm, cfg := withLLM(t, streamed(`{"description": "x"}`))
+	h := startWithDB(t, dsn, "i1", cfg)
+	conn, err := pgx.Connect(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(context.Background())
+	if _, err := conn.Exec(context.Background(), "DROP TABLE skill"); err != nil {
+		t.Fatal(err)
+	}
+	var res protocol.ActionListResult
+	if err := h.call(protocol.MethodActionList, nil, &res); err != nil || len(res.Actions) != len(actions) {
+		t.Fatalf("action.list: %+v, %v", res, err)
+	}
+	if _, err := h.run(t, sampleRun(t, "tighten")); err != nil {
+		t.Fatalf("a run that needs no skill failed: %v", err)
+	}
+	if _, ok := llm.requests[0]["tools"]; ok {
+		t.Fatal("skill tools offered without a skill list")
+	}
+	p := sampleRun(t, "tighten")
+	p.Context.Skills = []string{"college"}
+	if _, err := h.run(t, p); err == nil {
+		t.Fatal("a run with a forced skill succeeded without the database")
 	}
 }

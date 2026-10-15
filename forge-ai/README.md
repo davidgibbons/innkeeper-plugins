@@ -50,18 +50,24 @@ instructions, plus optional reference files. The plugin keeps skills in its
 own database schema, so it needs a core with the `records` capability. The
 owner adds, edits, and imports them on the instance's settings page.
 
-`skills` in the instance config lists the enabled skills by name. Only
-enabled skills reach the model:
+Each skill has an Enabled switch. New and imported skills start enabled,
+so an import is usable at once; reimporting a disabled skill leaves it
+disabled. Only enabled skills reach the model:
 
 - Every action offers the tools `load_skill` and `load_skill_file`.
   `load_skill`'s description lists each enabled skill's name and
   description; it returns the instructions and the reference file paths.
-- A `@skills/<name>` mention puts that skill's instructions in the system
-  prompt. A mention of a skill that isn't enabled fails the run.
+- A `@skills/<name>` mention puts that skill's instructions and its
+  reference file paths in the system prompt. A mention of a skill that
+  isn't enabled fails the run, and so do mentions whose instructions add up
+  to more than 256 KiB.
 - If the model rejects tools, the retry without them keeps only the
   mentioned skills.
 
-Renaming a skill drops it from `skills` until you edit the config.
+Once any skill is enabled, every action sends tools, including ones that
+otherwise send none, such as `tighten`. A model without tool support then
+rejects each run's first request, and every run makes that failed request
+before retrying without tools. Disable all skills for such a model.
 
 ### Import
 
@@ -74,7 +80,7 @@ Importing a skill replaces the one with the same name.
 | Upload or download | 8 MiB |
 | Download timeout | 30 seconds |
 | Zip entries | 200 |
-| `SKILL.md` or one reference file | 1 MiB |
+| `SKILL.md`, instructions, or one reference file | 1 MiB |
 | Instructions and reference files together | 4 MiB |
 | Reference files | 64 |
 
@@ -82,7 +88,8 @@ Importing a skill replaces the one with the same name.
   that folder are ignored.
 - A zip entry whose path is absolute, contains `\`, or leaves the folder
   with `..` fails the import.
-- Files that aren't UTF-8 text, such as images, are skipped.
+- Files that aren't UTF-8 text, such as images, are skipped and don't
+  count toward the size limits.
 - URLs may point at private and loopback addresses, such as a Git server on
   your LAN. The plugin runs on your network and importing needs write
   access in Innkeeper, so refusing them would block real uses. A writer can

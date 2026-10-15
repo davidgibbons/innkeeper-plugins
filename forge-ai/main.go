@@ -90,10 +90,14 @@ func actionList(ctx context.Context, in *instance) (protocol.ActionListResult, e
 		list.Actions = append(list.Actions, a.Action)
 	}
 	enabled, err := in.enabledSkills(ctx)
+	if err != nil {
+		// The actions work without skills; a run that names one reports the error.
+		fmt.Fprintf(os.Stderr, "list skills: %v\n", err)
+	}
 	for _, sk := range enabled {
 		list.Skills = append(list.Skills, protocol.Skill{Name: sk.Name, Description: sk.Description})
 	}
-	return list, err
+	return list, nil
 }
 
 func (srv *server) run(ctx context.Context, in *instance, params json.RawMessage) (*protocol.ActionRunResult, error) {
@@ -114,7 +118,11 @@ func (srv *server) run(ctx context.Context, in *instance, params json.RawMessage
 	}
 	enabled, err := in.enabledSkills(ctx)
 	if err != nil {
-		return nil, err
+		if len(r.Context.Skills) > 0 {
+			return nil, fmt.Errorf("list skills: %w", err)
+		}
+		// Only skills fail with the database; the run goes on without them.
+		fmt.Fprintf(os.Stderr, "list skills: %v\n", err)
 	}
 	forced, err := in.forcedSkills(ctx, enabled, r.Context.Skills)
 	if err != nil {
