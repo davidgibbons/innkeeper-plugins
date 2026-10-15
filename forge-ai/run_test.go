@@ -320,12 +320,122 @@ func TestMergeToolCallsAcrossProviders(t *testing.T) {
 	call := func(id, name, args string) anyllm.ToolCall {
 		return anyllm.ToolCall{ID: id, Function: anyllm.FunctionCall{Name: name, Arguments: args}}
 	}
-	// Anthropic resends each call whole under its ID.
-	var calls []anyllm.ToolCall
-	for _, d := range []anyllm.ToolCall{call("a", "get_card", `{"id"`), call("a", "get_card", `{"id": 1}`), call("b", "get_card", `{"id": 2}`)} {
-		calls = mergeToolCalls(calls, []anyllm.ToolCall{d})
+	merged := func(provider string, chunks ...anyllm.ToolCall) []anyllm.ToolCall {
+		var calls []anyllm.ToolCall
+		for _, d := range chunks {
+			calls = mergeToolCalls(provider, calls, []anyllm.ToolCall{d})
+		}
+		return calls
 	}
+	// Anthropic resends each call whole under its ID.
+	calls := merged("anthropic", call("a", "get_card", `{"id"`), call("a", "get_card", `{"id": 1}`), call("b", "get_card", `{"id": 2}`))
 	if len(calls) != 2 || calls[0].Function.Arguments != `{"id": 1}` || calls[1].ID != "b" || calls[0].Type != "function" {
-		t.Fatalf("calls %+v", calls)
+		t.Fatalf("anthropic: calls %+v", calls)
+	}
+	// any-llm-go numbers Ollama's calls within each chunk, so IDs repeat across calls.
+	calls = merged("ollama", call("call_0", "get_card", `{"id": 1}`), call("call_0", "get_card", `{"id": 2}`))
+	if len(calls) != 2 || calls[1].Function.Arguments != `{"id": 2}` {
+		t.Fatalf("ollama: calls %+v", calls)
+	}
+	// OpenAI-compatible fragments: the ID on the first only, or on every one.
+	for _, chunks := range [][]anyllm.ToolCall{
+		{call("x", "get_card", ""), call("", "", `{"id"`), call("", "", `: 1}`), call("y", "get_lorebook", `{"id": 2}`)},
+		{call("x", "get_card", ""), call("x", "", `{"id"`), call("x", "", `: 1}`), call("y", "get_lorebook", `{"id": 2}`)},
+	} {
+		calls = merged("openai-compatible", chunks...)
+		if len(calls) != 2 || calls[0].Function.Arguments != `{"id": 1}` || calls[1].Function.Name != "get_lorebook" {
+			t.Fatalf("openai-compatible: calls %+v", calls)
+		}
+	}
+}
+
+func TestFinalRoundOffersNoTools(t *testing.T) {
+	var replies []fakeReply
+	for range maxToolRounds - 1 {
+		replies = append(replies, fakeReply{deltas: []string{toolCall("call_1", "get_card", `{"id": 7}`)}})
+	}
+	llm, cfg := withLLM(t, append(replies, streamed(`{"description": "Done."}`))...)
+	h := startPlugin(t, cfg, nil)
+	if _, err := h.run(t, sampleRun(t, "revise")); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(llm.requests); n != maxToolRounds {
+		t.Fatalf("%d requests, want %d", n, maxToolRounds)
+	}
+	if _, ok := llm.requests[maxToolRounds-2]["tools"]; !ok {
+		t.Fatal("the round before the last offered no tools")
+	}
+	if _, ok := llm.requests[maxToolRounds-1]["tools"]; ok {
+		t.Fatal("the final round offered tools")
+	}
+}
+
+func TestNoRetryWithoutToolsAfterToolResults(t *testing.T) {
+	llm, cfg := withLLM(t, fakeReply{deltas: []string{toolCall("call_1", "get_card", `{"id": 7}`)}}, fakeReply{status: 400})
+	h := startPlugin(t, cfg, nil)
+	if _, err := h.run(t, sampleRun(t, "revise")); err == nil {
+		t.Fatal("a rejected second round succeeded")
+	}
+	if len(llm.requests) != 2 {
+		t.Fatalf("%d requests, want 2", len(llm.requests))
+	}
+}
+
+func TestEndedRunStopsTheToolLoop(t *testing.T) {
+	llm, cfg := withLLM(t, fakeReply{deltas: []string{toolCall("call_1", "get_card", `{"id": 7}`)}}, streamed(`{"description": "x"}`))
+	h := startPlugin(t, cfg, nil)
+	h.library = func(protocol.LibraryCallParams) (any, error) {
+		return nil, protocol.NewError(-32602, "run 1.1 has finished", false)
+	}
+	if _, err := h.run(t, sampleRun(t, "revise")); err == nil {
+		t.Fatal("the run went on after its token ended")
+	}
+	if len(llm.requests) != 1 {
+		t.Fatalf("%d requests after the run ended, want 1", len(llm.requests))
+	}
+}
+
+func TestCancelStopsTheToolLoop(t *testing.T) {
+	llm, cfg := withLLM(t, fakeReply{deltas: []string{toolCall("call_1", "get_card", `{"id": 7}`)}}, streamed(`{"description": "x"}`))
+	s, err := parseSettings(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := &instance{settings: s}
+	if in.llm, err = s.provider(""); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	lib := func(context.Context, string, string) (string, error) {
+		cancel() // The owner pressed Stop while the tool ran.
+		return "{}", nil
+	}
+	params := anyllm.CompletionParams{Model: "m", Messages: []anyllm.Message{{Role: anyllm.RoleUser, Content: "hi"}}}
+	if _, err := complete(ctx, in, params, lib, func() func(string) { return func(string) {} }); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if len(llm.requests) != 1 {
+		t.Fatalf("%d requests after cancel, want 1", len(llm.requests))
+	}
+}
+
+func TestProgressRestartsEachRound(t *testing.T) {
+	_, cfg := withLLM(t,
+		fakeReply{deltas: []string{content(`{"description": "draft"`), toolCall("call_1", "get_card", `{"id": 7}`)}},
+		streamed(`{"bogus": 1, "description": "Billy's brother."}`))
+	h := startPlugin(t, cfg, nil)
+	h.library = func(protocol.LibraryCallParams) (any, error) { return protocol.MCPCallResult{}, nil }
+	if _, err := h.run(t, sampleRun(t, "revise")); err != nil {
+		t.Fatal(err)
+	}
+	var messages []string
+	for _, p := range h.progress {
+		if p.Done >= p.Total {
+			t.Fatalf("progress %+v: done must stay below total", p)
+		}
+		messages = append(messages, p.Message)
+	}
+	if want := "Writing Description (1 of 10)"; len(messages) != 2 || messages[0] != want || messages[1] != want {
+		t.Fatalf("progress %q", messages)
 	}
 }

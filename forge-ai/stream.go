@@ -6,18 +6,25 @@ import (
 	"strings"
 )
 
-// visible is the model's output without <think> blocks. An unclosed block
-// hides the rest, since the model is still reasoning.
+// visible is the model's output without reasoning. A <think> block is
+// removed, an unclosed one hides the rest since the model is still reasoning,
+// and a </think> with no opening tag (Qwen3 and R1 templates put that in the
+// prompt) drops everything before it.
 func visible(s string) string {
 	var b strings.Builder
 	for {
-		open := strings.Index(s, "<think>")
+		open, end := strings.Index(s, "<think>"), strings.Index(s, "</think>")
+		if end >= 0 && (open < 0 || end < open) {
+			b.Reset()
+			s = s[end+len("</think>"):]
+			continue
+		}
 		if open < 0 {
 			b.WriteString(s)
 			return b.String()
 		}
 		b.WriteString(s[:open])
-		end := strings.Index(s[open:], "</think>")
+		end = strings.Index(s[open:], "</think>")
 		if end < 0 {
 			return b.String()
 		}
@@ -25,15 +32,36 @@ func visible(s string) string {
 	}
 }
 
+// objectStarts yields the output from each '{' on, since prose before the
+// JSON may hold braces of its own, such as {{char}}.
+func objectStarts(v string) func(func(string) bool) {
+	return func(yield func(string) bool) {
+		for i := strings.IndexByte(v, '{'); i >= 0; {
+			if !yield(v[i:]) {
+				return
+			}
+			next := strings.IndexByte(v[i+1:], '{')
+			if next < 0 {
+				return
+			}
+			i += 1 + next
+		}
+	}
+}
+
 // startedKeys lists the top-level keys of the JSON object the output has
 // begun, in order, including one whose value is still streaming.
 func startedKeys(output string) []string {
-	v := visible(output)
-	i := strings.IndexByte(v, '{')
-	if i < 0 {
-		return nil
+	for start := range objectStarts(visible(output)) {
+		if keys := keysFrom(start); len(keys) > 0 {
+			return keys
+		}
 	}
-	dec := json.NewDecoder(strings.NewReader(v[i:]))
+	return nil
+}
+
+func keysFrom(s string) []string {
+	dec := json.NewDecoder(strings.NewReader(s))
 	if _, err := dec.Token(); err != nil {
 		return nil
 	}
@@ -53,14 +81,15 @@ func startedKeys(output string) []string {
 	return keys
 }
 
-// parseObject reads the first JSON object in the output, after any <think>
-// blocks and around any code fence or prose.
+// parseObject reads the first JSON object in the output, after any reasoning
+// and around any code fence or prose.
 func parseObject(output string) (map[string]json.RawMessage, error) {
 	v := strings.TrimSpace(visible(output))
-	var obj map[string]json.RawMessage
-	i := strings.IndexByte(v, '{')
-	if i >= 0 && json.NewDecoder(strings.NewReader(v[i:])).Decode(&obj) == nil {
-		return obj, nil
+	for start := range objectStarts(v) {
+		var obj map[string]json.RawMessage
+		if json.NewDecoder(strings.NewReader(start)).Decode(&obj) == nil {
+			return obj, nil
+		}
 	}
 	if len(v) > 150 {
 		v = v[:150] + "…"

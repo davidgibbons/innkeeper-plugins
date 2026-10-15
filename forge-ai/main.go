@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sync/atomic"
 
 	"github.com/davidgibbons/innkeeper/protocol"
@@ -115,7 +116,7 @@ func (srv *server) run(ctx context.Context, in *instance, params json.RawMessage
 	if r.Library {
 		lib = coreLibrary(srv.conn, r.Run)
 	}
-	output, err := complete(ctx, in.llm, req, lib, srv.progress(r))
+	output, err := complete(ctx, in, req, lib, func() func(string) { return srv.progress(r) })
 	if err != nil {
 		return nil, err
 	}
@@ -134,23 +135,25 @@ var labels = map[string]string{"name": "Name", "description": "Description", "pe
 	"dimensions": "Dimensions", "contradictions": "Contradictions", "misplaced_content": "Misplaced content",
 	"suggestions": "Suggestions"}
 
-// progress returns a callback that sends one progress message per key as the
-// model starts writing it.
+// progress returns a callback for one request that sends one progress
+// message per key of the run's as the model starts writing it.
 func (srv *server) progress(r *run) func(string) {
 	keys := r.writes()
-	sent := 0
+	var announced []string
 	return func(output string) {
 		// ponytail: rescans the whole output per chunk, O(n²) in output
 		// length; fine for a card's few thousand tokens.
-		started := startedKeys(output)
-		for ; sent < len(started); sent++ {
-			key := started[sent]
+		for _, key := range startedKeys(output) {
+			if !slices.Contains(keys, key) || slices.Contains(announced, key) {
+				continue
+			}
 			label := labels[key]
 			if label == "" {
 				label = key
 			}
-			_ = srv.conn.Notify(protocol.NotifyProgress, protocol.Progress{Run: r.Run, Done: int64(sent),
-				Total: int64(len(keys)), Message: fmt.Sprintf("Writing %s (%d of %d)", label, sent+1, len(keys))})
+			_ = srv.conn.Notify(protocol.NotifyProgress, protocol.Progress{Run: r.Run, Done: int64(len(announced)),
+				Total: int64(len(keys)), Message: fmt.Sprintf("Writing %s (%d of %d)", label, len(announced)+1, len(keys))})
+			announced = append(announced, key)
 		}
 	}
 }

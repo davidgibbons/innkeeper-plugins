@@ -139,3 +139,21 @@ func TestRunInputsChecked(t *testing.T) {
 		}
 	}
 }
+
+func TestNullMeansUnchanged(t *testing.T) {
+	m := proposalOf(t, result(t, sampleRun(t, "revise"), `{"description": null, "personality": "Calm.", "scenario": null}`))
+	if m["description"] != "A very big, very tall orc who guards {{user}}." || m["personality"] != "Calm." {
+		t.Fatalf("proposal %v", m)
+	}
+	if _, ok := m["scenario"]; ok {
+		t.Fatalf("null scenario added a key: %v", m)
+	}
+}
+
+func TestTagsAsCommaSeparatedText(t *testing.T) {
+	m := proposalOf(t, result(t, sampleRun(t, "revise"), `{"tags": "orc, guard ,, brother"}`))
+	tags, _ := m["tags"].([]any)
+	if len(tags) != 3 || tags[1] != "guard" || tags[2] != "brother" {
+		t.Fatalf("tags = %v", m["tags"])
+	}
+}

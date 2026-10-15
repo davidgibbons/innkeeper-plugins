@@ -159,10 +159,19 @@ func (r *run) sent() (map[string]any, error) {
 }
 
 // typed decodes a card value: a list of strings for tags, otherwise a string.
-// Absent is empty.
+// Absent is empty. Tags written as comma-separated text are split.
 func typed(key string, raw json.RawMessage) (any, error) {
 	if key == "tags" {
 		tags := []string{}
+		var text string
+		if json.Unmarshal(raw, &text) == nil {
+			for t := range strings.SplitSeq(text, ",") {
+				if t = strings.TrimSpace(t); t != "" {
+					tags = append(tags, t)
+				}
+			}
+			return tags, nil
+		}
 		if len(raw) > 0 && string(raw) != "null" {
 			if err := json.Unmarshal(raw, &tags); err != nil {
 				return nil, errors.New("isn't a list of text")
@@ -206,7 +215,7 @@ func (r *run) proposal(got map[string]json.RawMessage) (json.RawMessage, error) 
 	}
 	for _, k := range r.writes() {
 		raw, ok := got[k]
-		if !ok {
+		if !ok || string(raw) == "null" {
 			continue
 		}
 		v, err := typed(k, raw)

@@ -12,6 +12,10 @@ func TestVisibleDropsThinkBlocks(t *testing.T) {
 		`{"x":1}<think>more`:                          `{"x":1}`,
 		"<think>a</think>\n{\"x\":<think>b</think>1}": "\n{\"x\":1}",
 		`no think`: `no think`,
+		// Qwen3 and R1 templates put the opening tag in the prompt.
+		`reasoning only</think>{"x":1}`:    `{"x":1}`,
+		`a</think>b</think>c`:              `c`,
+		`<think>x</think>y</think>{"x":1}`: `{"x":1}`,
 	}
 	for in, want := range cases {
 		if got := visible(in); got != want {
@@ -30,6 +34,7 @@ func TestStartedKeysOnPartialOutput(t *testing.T) {
 		{"```json\n{\"name\": \"Bo\", \"description\": \"A big", []string{"name", "description"}},
 		{`{"name": "Bo", "tags": ["a", "b"], "first_mes": "Hi`, []string{"name", "tags", "first_mes"}},
 		{`<think>{"wrong": 1}</think>{"name": "Bo"}`, []string{"name"}},
+		{"Here is {{char}}'s card:\n```json\n{\"name\": \"Bo\", \"desc", []string{"name"}},
 	}
 	for _, c := range cases {
 		if got := startedKeys(c.in); !slices.Equal(got, c.want) {
@@ -45,6 +50,10 @@ func TestParseObjectAfterThinkAndFence(t *testing.T) {
 	}
 	if string(obj["name"]) != `"Bo"` || string(obj["tags"]) != `["x"]` {
 		t.Fatalf("parsed %v", obj)
+	}
+	obj, err = parseObject("Here is {{char}}'s card, with {braces}:\n```json\n{\"name\": \"Bo\"}\n```")
+	if err != nil || string(obj["name"]) != `"Bo"` {
+		t.Fatalf("object after macros: %v, %v", obj, err)
 	}
 	if _, err := parseObject("I can't help with that."); err == nil || !strings.Contains(err.Error(), "I can't help") {
 		t.Fatalf("prose: err = %v, want one quoting the output", err)

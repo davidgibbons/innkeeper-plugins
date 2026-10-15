@@ -17,7 +17,7 @@ import (
 	llmerrors "github.com/mozilla-ai/any-llm-go/errors"
 )
 
-// maxToolRounds caps how many times one run's model may call library tools.
+// maxToolRounds caps a run's requests to the model; the last offers no tools.
 const maxToolRounds = 8
 
 // libraryTools are the core's read tools a library action may call. The
@@ -45,7 +45,8 @@ func tool(name, description string, properties map[string]any, required ...strin
 type library func(ctx context.Context, name, arguments string) (string, error)
 
 // coreLibrary sends a run's tool calls to the core. A refusal or a tool
-// error goes back to the model as the tool's result.
+// error goes back to the model as the tool's result; a run that has ended
+// stops the loop.
 func coreLibrary(conn *protocol.Conn, run string) library {
 	return func(ctx context.Context, name, arguments string) (string, error) {
 		if arguments == "" {
@@ -58,7 +59,7 @@ func coreLibrary(conn *protocol.Conn, run string) library {
 		err := conn.Call(ctx, protocol.MethodLibraryCall,
 			protocol.LibraryCallParams{Run: run, Name: name, Arguments: json.RawMessage(arguments)}, &res)
 		var rpcErr *protocol.Error
-		if errors.As(err, &rpcErr) {
+		if errors.As(err, &rpcErr) && rpcErr.Code != protocol.CodeInvalidParams {
 			return "error: " + rpcErr.Message, nil
 		}
 		if err != nil {
@@ -76,38 +77,46 @@ func coreLibrary(conn *protocol.Conn, run string) library {
 }
 
 // complete runs the conversation to the model's final answer, answering its
-// tool calls through lib when lib is set. onText gets the answer so far.
-func complete(ctx context.Context, llm anyllm.Provider, params anyllm.CompletionParams, lib library, onText func(string)) (string, error) {
-	for range maxToolRounds {
-		if lib != nil {
+// tool calls through lib when lib is set. newProgress gives each request its
+// own callback, which gets that request's text so far.
+func complete(ctx context.Context, in *instance, params anyllm.CompletionParams, lib library, newProgress func() func(string)) (string, error) {
+	for round := 1; ; round++ {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		// The last round offers no tools, so the model has to answer.
+		params.Tools = nil
+		if lib != nil && round < maxToolRounds {
 			params.Tools = libraryTools
 		}
-		text, calls, err := stream(ctx, llm, params, onText)
-		if err != nil && params.Tools != nil && errors.Is(err, llmerrors.ErrInvalidRequest) {
+		text, calls, err := stream(ctx, in, params, newProgress())
+		if err != nil && round == 1 && params.Tools != nil && errors.Is(err, llmerrors.ErrInvalidRequest) {
 			// Most likely a model without tool support; the context in the prompt still applies.
 			fmt.Fprintf(os.Stderr, "retrying without library tools: %v\n", err)
 			lib, params.Tools = nil, nil
-			continue
+			text, calls, err = stream(ctx, in, params, newProgress())
 		}
-		if err != nil || len(calls) == 0 {
+		if err != nil || len(calls) == 0 || params.Tools == nil {
 			return text, err
 		}
 		params.Messages = append(params.Messages, anyllm.Message{Role: anyllm.RoleAssistant, Content: text, ToolCalls: calls})
 		for _, c := range calls {
 			result, err := lib(ctx, c.Function.Name, c.Function.Arguments)
+			if err == nil {
+				err = ctx.Err()
+			}
 			if err != nil {
 				return "", fmt.Errorf("library.call %s: %w", c.Function.Name, err)
 			}
 			params.Messages = append(params.Messages, anyllm.Message{Role: anyllm.RoleTool, Content: result, ToolCallID: c.ID})
 		}
 	}
-	return "", fmt.Errorf("the model called library tools more than %d times", maxToolRounds)
 }
 
 // stream runs one request, returning its text and any tool calls.
-func stream(ctx context.Context, llm anyllm.Provider, params anyllm.CompletionParams, onText func(string)) (string, []anyllm.ToolCall, error) {
+func stream(ctx context.Context, in *instance, params anyllm.CompletionParams, onText func(string)) (string, []anyllm.ToolCall, error) {
 	params.Stream = true
-	chunks, errs := llm.CompletionStream(ctx, params)
+	chunks, errs := in.llm.CompletionStream(ctx, params)
 	var text strings.Builder
 	var calls []anyllm.ToolCall
 	for chunk := range chunks {
@@ -116,7 +125,7 @@ func stream(ctx context.Context, llm anyllm.Provider, params anyllm.CompletionPa
 				text.WriteString(c.Delta.Content)
 				onText(text.String())
 			}
-			calls = mergeToolCalls(calls, c.Delta.ToolCalls)
+			calls = mergeToolCalls(in.settings.Provider, calls, c.Delta.ToolCalls)
 		}
 	}
 	if err := <-errs; err != nil {
@@ -125,22 +134,27 @@ func stream(ctx context.Context, llm anyllm.Provider, params anyllm.CompletionPa
 	return text.String(), calls, ctx.Err()
 }
 
-// mergeToolCalls adds streamed tool call deltas to calls. Providers differ:
-// OpenAI-compatible APIs send fragments with the ID only on the first, and
-// Anthropic resends the whole call so far under its ID.
-func mergeToolCalls(calls, deltas []anyllm.ToolCall) []anyllm.ToolCall {
+// mergeToolCalls adds streamed tool call deltas to calls. any-llm-go passes
+// on each provider's own streaming shape, with no index to match on:
+//   - anthropic resends the whole call so far under its ID;
+//   - ollama sends whole calls, numbered within each chunk, so IDs repeat;
+//   - the rest send whole calls with unique IDs, or OpenAI-style fragments
+//     whose first carries the ID and later ones carry it or nothing.
+func mergeToolCalls(provider string, calls, deltas []anyllm.ToolCall) []anyllm.ToolCall {
 	for _, d := range deltas {
 		d.Type = "function"
 		i := slices.IndexFunc(calls, func(c anyllm.ToolCall) bool { return d.ID != "" && c.ID == d.ID })
 		switch {
-		case i >= 0:
-			calls[i] = d
-		case d.ID != "" || len(calls) == 0:
+		case provider == "ollama" || len(calls) == 0 || (d.ID != "" && i < 0):
 			calls = append(calls, d)
+		case provider == "anthropic" && i >= 0:
+			calls[i] = d
 		default:
-			last := &calls[len(calls)-1]
-			last.Function.Name += d.Function.Name
-			last.Function.Arguments += d.Function.Arguments
+			if i < 0 {
+				i = len(calls) - 1
+			}
+			calls[i].Function.Name += d.Function.Name
+			calls[i].Function.Arguments += d.Function.Arguments
 		}
 	}
 	return calls
