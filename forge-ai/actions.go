@@ -31,6 +31,8 @@ type action struct {
 	protocol.Action
 	temperature float64
 	maxTokens   int
+	// appends is the data key whose list the action adds to, keeping what's there.
+	appends string
 }
 
 const povSchema = `{"type": "object", "properties": {"point_of_view": {"type": "string", "title": "Point of view", "enum": [%s]}}%s}`
@@ -38,26 +40,32 @@ const povSchema = `{"type": "object", "properties": {"point_of_view": {"type": "
 var actions = []action{
 	{protocol.Action{ID: "generate", Label: "Forge", Description: "Write a new card from a concept.",
 		Applies: protocol.ApplyNew, Instruction: true, Library: true, Images: true,
-		Inputs: json.RawMessage(fmt.Sprintf(povSchema, `"first", "third", "scenario"`, ""))}, 0.8, 8192},
+		Inputs: json.RawMessage(fmt.Sprintf(povSchema, `"first", "third", "scenario"`, ""))}, 0.8, 8192, ""},
 	{protocol.Action{ID: "revise", Label: "Reforge", Description: "Change the card as you describe.",
-		Applies: protocol.ApplyCard, Instruction: true, Library: true}, 0.7, 8192},
+		Applies: protocol.ApplyCard, Instruction: true, Library: true}, 0.7, 8192, ""},
 	{protocol.Action{ID: "evaluate", Label: "Evaluate", Description: "Score the card on six dimensions and list its problems.",
-		Applies: protocol.ApplyCard, ReportOnly: true}, 0.3, 4096},
+		Applies: protocol.ApplyCard, ReportOnly: true}, 0.3, 4096, ""},
 	{protocol.Action{ID: "tighten-card", Label: "Tighten card", Description: "Cut filler and repetition across the whole card.",
-		Applies: protocol.ApplyCard}, 0.5, 8192},
+		Applies: protocol.ApplyCard}, 0.5, 8192, ""},
 	{protocol.Action{ID: "change-pov", Label: "Change point of view", Description: "Rewrite the card in first or third person.",
-		Applies: protocol.ApplyCard, Inputs: json.RawMessage(fmt.Sprintf(povSchema, `"first", "third"`, `, "required": ["point_of_view"]`))}, 0.6, 8192},
+		Applies: protocol.ApplyCard, Inputs: json.RawMessage(fmt.Sprintf(povSchema, `"first", "third"`, `, "required": ["point_of_view"]`))}, 0.6, 8192, ""},
 	{protocol.Action{ID: "tighten", Label: "Tighten", Description: "Cut filler from this field.",
-		Applies: protocol.ApplyCard, Fields: textFields}, 0.5, 4096},
+		Applies: protocol.ApplyCard, Fields: textFields}, 0.5, 4096, ""},
 	{protocol.Action{ID: "expand", Label: "Expand", Description: "Add concrete detail to this field.",
-		Applies: protocol.ApplyCard, Fields: textFields}, 0.8, 4096},
+		Applies: protocol.ApplyCard, Fields: textFields}, 0.8, 4096, ""},
 	{protocol.Action{ID: "to-prose", Label: "Convert to prose", Description: "Turn lists and bracket formats into paragraphs.",
-		Applies: protocol.ApplyCard, Fields: textFields}, 0.5, 4096},
+		Applies: protocol.ApplyCard, Fields: textFields}, 0.5, 4096, ""},
 	{protocol.Action{ID: "rewrite", Label: "Rewrite…", Description: "Rewrite this field as you describe.",
-		Applies: protocol.ApplyCard, Fields: textFields, Instruction: true}, 0.7, 4096},
+		Applies: protocol.ApplyCard, Fields: textFields, Instruction: true}, 0.7, 4096, ""},
 	{protocol.Action{ID: "examples", Label: "Write examples", Description: "Write new example dialogue.",
 		Applies: protocol.ApplyCard, Fields: []string{"mes_example"},
-		Inputs: json.RawMessage(`{"type": "object", "properties": {"count": {"type": "integer", "title": "Examples", "minimum": 1, "maximum": 10, "default": 3}}}`)}, 0.8, 4096},
+		Inputs: json.RawMessage(`{"type": "object", "properties": {"count": {"type": "integer", "title": "Examples", "minimum": 1, "maximum": 10, "default": 3}}}`)}, 0.8, 4096, ""},
+	{protocol.Action{ID: "alternate-greetings", Label: "Write alternate greetings", Description: "Add new opening messages to the card.",
+		Applies: protocol.ApplyCard, Library: true,
+		Inputs: json.RawMessage(`{"type": "object", "properties": {"count": {"type": "integer", "title": "Greetings", "minimum": 1, "maximum": 10, "default": 3}}}`)}, 0.9, 8192, "alternate_greetings"},
+	{protocol.Action{ID: "lore-entries", Label: "Write lore entries", Description: "Add entries about what you describe, from the cards you mention.",
+		Applies: protocol.ApplyLorebook, Instruction: true, Library: true,
+		Inputs: json.RawMessage(`{"type": "object", "properties": {"count": {"type": "integer", "title": "Entries", "minimum": 1, "maximum": 20, "default": 5}}}`)}, 0.7, 8192, "entries"},
 }
 
 func findAction(id string) (action, bool) {
@@ -96,7 +104,7 @@ func parseRun(p protocol.ActionRunParams) (*run, error) {
 	}
 	if a.Applies != protocol.ApplyNew {
 		if err := json.Unmarshal(p.Entity.Data, &r.draft); err != nil || r.draft == nil {
-			return nil, invalid("action %s needs the card's data", a.ID)
+			return nil, invalid("action %s needs the %s's data", a.ID, a.Applies)
 		}
 	}
 	var inputs struct {
@@ -121,18 +129,27 @@ func parseRun(p protocol.ActionRunParams) (*run, error) {
 		if r.pointOfView != "first" && r.pointOfView != "third" {
 			return nil, invalid("point_of_view must be first or third")
 		}
-	case "examples":
-		if r.count == 0 {
-			r.count = 3
-		}
-		r.count = min(max(r.count, 1), 10)
+	case "examples", "alternate-greetings":
+		r.count = between(r.count, 3, 10)
+	case "lore-entries":
+		r.count = between(r.count, 5, 20)
 	}
 	return r, nil
+}
+
+// between is count, or def when it's unset, kept within 1 to most.
+func between(count, def, most int) int {
+	if count == 0 {
+		return def
+	}
+	return min(max(count, 1), most)
 }
 
 // writes is the keys the model returns for this run.
 func (r *run) writes() []string {
 	switch {
+	case r.appends != "":
+		return []string{r.appends}
 	case r.ReportOnly:
 		return evaluationKeys
 	case len(r.Fields) > 0:
@@ -195,11 +212,16 @@ func (r *run) result(output string) (protocol.ActionRunResult, error) {
 	if err != nil {
 		return res, err
 	}
-	if r.ReportOnly {
+	switch {
+	case r.ReportOnly:
 		res.Report, err = report(obj)
-		return res, err
+	case r.appends == "alternate_greetings":
+		res.Proposal, err = r.withGreetings(obj[r.appends])
+	case r.appends == "entries":
+		res.Proposal, err = r.withEntries(obj[r.appends])
+	default:
+		res.Proposal, err = r.proposal(obj)
 	}
-	res.Proposal, err = r.proposal(obj)
 	return res, err
 }
 

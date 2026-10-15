@@ -18,6 +18,8 @@ var templates = template.Must(template.New("").Delims("[[", "]]").ParseFS(prompt
 // promptData is what the templates see.
 type promptData struct {
 	Card        string
+	Lorebook    string
+	Greetings   string
 	Field       string
 	FieldText   string
 	Instruction string
@@ -32,21 +34,36 @@ type promptData struct {
 func (r *run) prompts(s settings) (system, user string, err error) {
 	d := promptData{Field: r.Field, Instruction: r.Instruction, PointOfView: r.pointOfView, Count: r.count,
 		Image: r.Images.Reference != "" || r.Images.Avatar != "", Context: r.Context}
-	if r.draft != nil {
+	switch {
+	case r.Applies == protocol.ApplyLorebook:
+		book, err := r.sentLorebook()
+		if err != nil {
+			return "", "", err
+		}
+		if d.Lorebook, err = indented(book); err != nil {
+			return "", "", err
+		}
+	case r.draft != nil:
 		card, err := r.sent()
 		if err != nil {
 			return "", "", err
 		}
-		var b strings.Builder
-		enc := json.NewEncoder(&b)
-		enc.SetEscapeHTML(false) // Keep <START> as written.
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(card); err != nil {
+		if d.Card, err = indented(card); err != nil {
 			return "", "", err
 		}
-		d.Card = strings.TrimSpace(b.String())
 		if r.Field != "" {
 			d.FieldText, _ = card[r.Field].(string)
+		}
+		if r.appends == "alternate_greetings" {
+			greetings, err := r.greetings()
+			if err != nil {
+				return "", "", err
+			}
+			if len(greetings) > 0 {
+				if d.Greetings, err = indented(greetings); err != nil {
+					return "", "", err
+				}
+			}
 		}
 	}
 	if system, err = execute(r.ID+".system", d); err != nil {
@@ -62,6 +79,18 @@ func (r *run) prompts(s settings) (system, user string, err error) {
 		system += "\n\n## For this action\n\n" + a
 	}
 	return system, user, nil
+}
+
+// indented is v as indented JSON.
+func indented(v any) (string, error) {
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false) // Keep <START> as written.
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(b.String()), nil
 }
 
 func execute(name string, d promptData) (string, error) {

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/davidgibbons/innkeeper/protocol"
@@ -155,5 +156,73 @@ func TestTagsAsCommaSeparatedText(t *testing.T) {
 	tags, _ := m["tags"].([]any)
 	if len(tags) != 3 || tags[1] != "guard" || tags[2] != "brother" {
 		t.Fatalf("tags = %v", m["tags"])
+	}
+}
+
+func TestAlternateGreetingsAppendToExisting(t *testing.T) {
+	p := sampleRun(t, "alternate-greetings")
+	p.Entity.Data = json.RawMessage(`{"name": "Brakka", "first_mes": "Hi.", "alternate_greetings": ["Old."], "extensions": {"x": 1}}`)
+	m := proposalOf(t, result(t, p, `{"alternate_greetings": ["*Rain.* Who goes there?", " ", "Old.", "*Dawn.*"]}`))
+	got, _ := json.Marshal(m["alternate_greetings"])
+	if string(got) != `["Old.","*Rain.* Who goes there?","*Dawn.*"]` || m["first_mes"] != "Hi." || m["extensions"] == nil {
+		t.Fatalf("proposal %v", m)
+	}
+}
+
+func TestAlternateGreetingsOnACardWithoutAny(t *testing.T) {
+	m := proposalOf(t, result(t, sampleRun(t, "alternate-greetings"), `{"alternate_greetings": ["*Dawn.*"]}`))
+	if got, _ := json.Marshal(m["alternate_greetings"]); string(got) != `["*Dawn.*"]` || m["name"] != "Brakka" {
+		t.Fatalf("proposal %v", m)
+	}
+}
+
+func TestLoreEntriesKeepExistingAndAppendNew(t *testing.T) {
+	out := `{"entries": [
+		{"comment": "The pass", "keys": ["BRAKKA", "Iron Pass", "iron pass"], "content": "A narrow road through the peaks."},
+		{"comment": "Repeat", "keys": ["the orc"], "content": "Only taken keys."},
+		{"comment": "Empty", "keys": ["Snow"], "content": " "},
+		{"keys": ["Billy"], "content": "Brakka's brother."}]}`
+	m := proposalOf(t, result(t, sampleRun(t, "lore-entries"), out))
+	if m["name"] != "Northern Reach" || m["description"] != "The cold north." {
+		t.Fatalf("proposal %v", m)
+	}
+	entries, _ := m["entries"].([]any)
+	if len(entries) != 3 {
+		t.Fatalf("entries %v", entries)
+	}
+	var before struct{ Entries []any }
+	_ = json.Unmarshal([]byte(sampleLorebook), &before)
+	if !reflect.DeepEqual(entries[0], before.Entries[0]) {
+		t.Fatalf("existing entry changed: %v", entries[0])
+	}
+	added, _ := json.Marshal(entries[1:])
+	if string(added) != `[{"comment":"The pass","content":"A narrow road through the peaks.","enabled":true,"extensions":{},`+
+		`"insertion_order":100,"keys":["Iron Pass"],"position":"before_char","use_regex":false},`+
+		`{"content":"Brakka's brother.","enabled":true,"extensions":{},"insertion_order":100,"keys":["Billy"],"position":"before_char","use_regex":false}]` {
+		t.Fatalf("added entries %s", added)
+	}
+}
+
+func TestCountDefaultsAndLimits(t *testing.T) {
+	cases := []struct {
+		action, inputs string
+		want           int
+	}{
+		{"alternate-greetings", `{}`, 3},
+		{"alternate-greetings", `{"count": 50}`, 10},
+		{"lore-entries", `{}`, 5},
+		{"lore-entries", `{"count": 50}`, 20},
+		{"lore-entries", `{"count": -2}`, 1},
+	}
+	for _, c := range cases {
+		p := sampleRun(t, c.action)
+		p.Inputs = json.RawMessage(c.inputs)
+		r, err := parseRun(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.count != c.want {
+			t.Errorf("%s %s: count %d, want %d", c.action, c.inputs, r.count, c.want)
+		}
 	}
 }

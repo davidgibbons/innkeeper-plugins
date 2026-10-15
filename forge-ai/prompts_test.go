@@ -14,7 +14,12 @@ import (
 const sampleCard = `{"name": "Brakka", "description": "A very big, very tall orc who guards {{user}}.", "personality": "Gruff.",
 	"first_mes": "*Brakka grunts.*", "mes_example": "<START>\n{{char}}: Hm.", "tags": ["orc"], "extensions": {"x": 1}}`
 
-// sampleRun is a valid run of the action id on sampleCard.
+// sampleLorebook has one entry, with an id the proposal must keep.
+const sampleLorebook = `{"name": "Northern Reach", "description": "The cold north.", "entries": [{"id": 1, "keys": ["Brakka", "the orc"],
+	"content": "Brakka guards the pass.", "enabled": true, "insertion_order": 50, "use_regex": false, "extensions": {"depth": 4}}]}`
+
+// sampleRun is a valid run of the action id on sampleCard, or for a lorebook
+// action on sampleLorebook with sampleCard attached.
 func sampleRun(t *testing.T, id string) protocol.ActionRunParams {
 	t.Helper()
 	a, ok := findAction(id)
@@ -23,8 +28,12 @@ func sampleRun(t *testing.T, id string) protocol.ActionRunParams {
 	}
 	p := protocol.ActionRunParams{Run: "1.1", Action: id, Entity: protocol.ActionEntity{Kind: "card", Data: json.RawMessage(sampleCard)},
 		Inputs: json.RawMessage(`{}`)}
-	if a.Applies == protocol.ApplyNew {
+	switch a.Applies {
+	case protocol.ApplyNew:
 		p.Entity.Data = nil
+	case protocol.ApplyLorebook:
+		p.Entity = protocol.ActionEntity{Kind: "lorebook", Data: json.RawMessage(sampleLorebook)}
+		p.Context.Cards = []protocol.ContextItem{{ID: 7, Name: "Brakka", Data: json.RawMessage(sampleCard)}}
 	}
 	if len(a.Fields) > 0 {
 		p.Field = a.Fields[0]
@@ -96,6 +105,23 @@ func TestPromptsCarryRunInputs(t *testing.T) {
 	p.Inputs = json.RawMessage(`{"count": 5}`)
 	if system, _, _ := render(t, p, settings{}); !strings.Contains(system, "Write 5 example") {
 		t.Errorf("examples: count missing from %q", system)
+	}
+	p = sampleRun(t, "alternate-greetings")
+	p.Entity.Data = json.RawMessage(`{"name": "Brakka", "alternate_greetings": ["*The gate creaks.*"]}`)
+	p.Inputs = json.RawMessage(`{"count": 4}`)
+	if system, user, _ := render(t, p, settings{}); !strings.Contains(system, "Write 4 new greetings") || !strings.Contains(user, "The gate creaks.") {
+		t.Errorf("alternate-greetings: count or existing greetings missing:\n%s\n%s", system, user)
+	}
+	p = sampleRun(t, "lore-entries")
+	p.Instruction = "the guards of the pass"
+	system, user, _ := render(t, p, settings{})
+	for _, want := range []string{"Write 5 new entries", "the guards of the pass", "Northern Reach", "Brakka guards the pass.", "Card: Brakka"} {
+		if !strings.Contains(system+user, want) {
+			t.Errorf("lore-entries: prompt lacks %q:\n%s\n%s", want, system, user)
+		}
+	}
+	if strings.Contains(user, "insertion_order") {
+		t.Errorf("lore-entries: the model sees entry settings:\n%s", user)
 	}
 	for pov, want := range map[string]string{"first": "first person", "third": "third person", "scenario": "scenario card"} {
 		p := sampleRun(t, "generate")

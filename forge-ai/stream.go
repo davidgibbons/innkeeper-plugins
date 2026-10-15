@@ -96,3 +96,43 @@ func parseObject(output string) (map[string]json.RawMessage, error) {
 	}
 	return nil, fmt.Errorf("the model didn't return a JSON object: %q", v)
 }
+
+// startedItems counts the items the output has begun in the list under key,
+// including one still streaming.
+func startedItems(output, key string) int {
+	for start := range objectStarts(visible(output)) {
+		dec := json.NewDecoder(strings.NewReader(start))
+		if _, err := dec.Token(); err != nil {
+			continue
+		}
+		for dec.More() {
+			tok, err := dec.Token()
+			if k, ok := tok.(string); err != nil || !ok {
+				break
+			} else if k != key {
+				var value json.RawMessage
+				if dec.Decode(&value) != nil {
+					break
+				}
+				continue
+			}
+			if tok, err := dec.Token(); err != nil || tok != json.Delim('[') {
+				return 0
+			}
+			n := 0
+			for dec.More() {
+				// More reports an item at the end of partial input too.
+				if strings.Trim(start[dec.InputOffset():], " \t\r\n,") == "" {
+					break
+				}
+				n++
+				var item json.RawMessage
+				if dec.Decode(&item) != nil {
+					break
+				}
+			}
+			return n
+		}
+	}
+	return 0
+}

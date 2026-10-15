@@ -1,5 +1,5 @@
 name = "forge-ai"
-version = "0.2.0"
+version = "0.3.0"
 protocol = 1
 command = ["./forge-ai"]
 capabilities = ["action", "records"]
@@ -56,6 +56,8 @@ expand = { type = "string", title = "Expand" }
 to-prose = { type = "string", title = "Convert to prose" }
 rewrite = { type = "string", title = "Rewrite" }
 examples = { type = "string", title = "Write examples" }
+alternate-greetings = { type = "string", title = "Write alternate greetings" }
+lore-entries = { type = "string", title = "Write lore entries" }
 
 [records.skill]
 label = "Skills"

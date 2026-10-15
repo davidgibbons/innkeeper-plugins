@@ -1,7 +1,7 @@
 # forge-ai
 
-Writes, revises, tightens, and evaluates character cards with a language
-model, through [any-llm-go](https://github.com/mozilla-ai/any-llm-go). It
+Writes, revises, tightens, and evaluates character cards, and adds
+lorebook entries, with a language model, through [any-llm-go](https://github.com/mozilla-ai/any-llm-go). It
 offers the `action` capability, so it needs a core that has it.
 
 Each instance is one model setup. `provider` and `model` are required.
@@ -21,9 +21,17 @@ Each instance is one model setup. `provider` and `model` are required.
 | `change-pov` | a card | Rewrites the card in first or third person |
 | `tighten`, `expand`, `to-prose`, `rewrite` | one prose field | Edits that field; `rewrite` takes an instruction |
 | `examples` | `mes_example` | Writes 1 to 10 example exchanges, 3 by default |
+| `alternate-greetings` | a card | Adds 1 to 10 alternate greetings, 3 by default, after the existing ones |
+| `lore-entries` | a lorebook | Adds 1 to 20 entries, 5 by default, about what the instruction asks, from the cards it mentions |
 
 Whole-card actions send the model only the card's prose keys, `name`, and
 `tags`; `extensions` and the rest stay as they were.
+
+`lore-entries` sends the lorebook's name, description, and each entry's
+`comment`, `keys`, and `content`. Existing entries stay as they were. A new
+entry has no `id`, `enabled` true, `insertion_order` 100, `position`
+`before_char`, and no regex. A key an earlier entry already has is dropped,
+ignoring case, and so is an entry left without keys.
 
 ## Prompts
 
@@ -37,7 +45,7 @@ at commit `0b2f57e`, changed to ask for JSON keyed by CCv3 data keys.
 
 ## Library access
 
-`generate` and `revise` may read the library through `library.call` when
+`generate`, `revise`, `alternate-greetings`, and `lore-entries` may read the library through `library.call` when
 the owner turns on Library access for the instance. If the model rejects
 the request with tools, the run retries once without them, and only the
 cards and lorebooks the owner attached reach the model.

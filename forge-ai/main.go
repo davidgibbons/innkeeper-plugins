@@ -1,5 +1,6 @@
 // Command forge-ai is an action plugin. It writes, revises, tightens, and
-// evaluates character cards with a language model, through any-llm-go.
+// evaluates character cards, and adds lorebook entries, with a language
+// model, through any-llm-go.
 package main
 
 import (
@@ -14,7 +15,7 @@ import (
 	anyllm "github.com/mozilla-ai/any-llm-go"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 // instance is the model setup initialize configured. err is a settings
 // problem, reported by the first run. store is nil without a database_url.
@@ -178,6 +179,9 @@ var labels = map[string]string{"name": "Name", "description": "Description", "pe
 // progress returns a callback for one request that sends one progress
 // message per key of the run's as the model starts writing it.
 func (srv *server) progress(r *run) func(string) {
+	if r.appends != "" {
+		return srv.itemProgress(r)
+	}
 	keys := r.writes()
 	var announced []string
 	return func(output string) {
@@ -194,6 +198,21 @@ func (srv *server) progress(r *run) func(string) {
 			_ = srv.conn.Notify(protocol.NotifyProgress, protocol.Progress{Run: r.Run, Done: int64(len(announced)),
 				Total: int64(len(keys)), Message: fmt.Sprintf("Writing %s (%d of %d)", label, len(announced)+1, len(keys))})
 			announced = append(announced, key)
+		}
+	}
+}
+
+// itemLabels name the items an action appends, in progress messages.
+var itemLabels = map[string]string{"alternate_greetings": "greeting", "entries": "entry"}
+
+// itemProgress returns a callback for one request that sends one progress
+// message per item, up to the run's count, as the model starts writing it.
+func (srv *server) itemProgress(r *run) func(string) {
+	announced := 0
+	return func(output string) {
+		for n := min(startedItems(output, r.appends), r.count); announced < n; announced++ {
+			_ = srv.conn.Notify(protocol.NotifyProgress, protocol.Progress{Run: r.Run, Done: int64(announced),
+				Total: int64(r.count), Message: fmt.Sprintf("Writing %s %d of %d", itemLabels[r.appends], announced+1, r.count)})
 		}
 	}
 }

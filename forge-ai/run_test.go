@@ -444,3 +444,33 @@ func TestProgressRestartsEachRound(t *testing.T) {
 		t.Fatalf("progress %q", messages)
 	}
 }
+
+func TestLoreEntriesRunProgressPerEntry(t *testing.T) {
+	out := `{"entries": [{"comment": "The pass", "keys": ["Iron Pass"], "content": "A narrow road."},
+		{"keys": ["Billy"], "content": "Brakka's brother."}, {"keys": ["Snow"], "content": "Always."}]}`
+	llm, cfg := withLLM(t, streamed(out))
+	h := startPlugin(t, cfg, nil)
+	p := sampleRun(t, "lore-entries")
+	p.Inputs = json.RawMessage(`{"count": 2}`)
+	res, err := h.run(t, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var book struct{ Entries []map[string]any }
+	if err := json.Unmarshal(res.Proposal, &book); err != nil || len(book.Entries) != 4 || book.Entries[0]["id"] != 1.0 {
+		t.Fatalf("proposal %s: %v", res.Proposal, err)
+	}
+	var messages []string
+	for _, pr := range h.progress {
+		if pr.Total != 2 || pr.Done >= pr.Total {
+			t.Fatalf("progress %+v", pr)
+		}
+		messages = append(messages, pr.Message)
+	}
+	if len(messages) != 2 || messages[0] != "Writing entry 1 of 2" || messages[1] != "Writing entry 2 of 2" {
+		t.Fatalf("progress %q", messages)
+	}
+	if tools, _ := llm.requests[0]["tools"].([]any); len(tools) != 4 {
+		t.Fatalf("lore-entries offered tools %v", llm.requests[0]["tools"])
+	}
+}
