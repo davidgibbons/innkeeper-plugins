@@ -105,20 +105,9 @@ func emit(got found, run, blobTmp string, notify notifyFunc) error {
 		}
 		return notify(protocol.NotifyEmitLorebook, protocol.EmitLorebook{Run: run, Item: got.item, Lorebook: book})
 	}
-	c, img, err := card.Decode(got.card)
+	c, img, err := decodeCard(got)
 	if err != nil {
-		return permanent(fmt.Errorf("%s: %w", got.item, err))
-	}
-	if c, err = withSource(c, got.item); err != nil {
-		return permanent(fmt.Errorf("%s: %w", got.item, err))
-	}
-	if got.avatar != nil {
-		if png, err := card.AsPNG(got.avatar); err == nil {
-			img = png
-		} else {
-			// The card matters more than its picture; keep the one Decode returned.
-			log.Printf("%s: no avatar: %v", got.item, err)
-		}
+		return err
 	}
 	ev := protocol.EmitCard{Run: run, Item: got.item, Card: c}
 	if img != nil {
@@ -127,6 +116,36 @@ func emit(got found, run, blobTmp string, notify notifyFunc) error {
 		}
 	}
 	return notify(protocol.NotifyEmitCard, ev)
+}
+
+// decodeCard reads the card got holds as CCv3, with its page in data.source,
+// and its avatar as a PNG, or nil.
+func decodeCard(got found) (json.RawMessage, []byte, error) {
+	c, img, err := card.Decode(got.card)
+	if err != nil {
+		return nil, nil, permanent(fmt.Errorf("%s: %w", got.item, err))
+	}
+	if c, err = withSource(c, got.item); err != nil {
+		return nil, nil, permanent(fmt.Errorf("%s: %w", got.item, err))
+	}
+	if got.avatar != nil {
+		if png, err := siteAvatar(got.avatar); err == nil {
+			img = png
+		} else {
+			// The card matters more than its picture; keep the one Decode returned.
+			log.Printf("%s: no avatar: %v", got.item, err)
+		}
+	}
+	return c, img, nil
+}
+
+// siteAvatar returns a site's picture as a PNG without card chunks, so its
+// bytes change only when the picture does. chub serves the card PNG itself.
+func siteAvatar(b []byte) ([]byte, error) {
+	if _, img, err := card.Decode(b); err == nil && img != nil {
+		b = img
+	}
+	return card.AsPNG(b)
 }
 
 // withSource appends page to the CCv3 card's data.source, which sites.detect reads.

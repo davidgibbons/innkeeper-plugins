@@ -1,10 +1,13 @@
 package main
 
 import (
+	"errors"
 	"net/http"
+	"os"
 	"slices"
 	"testing"
 
+	"github.com/davidgibbons/innkeeper-plugins/card"
 	"github.com/davidgibbons/innkeeper/protocol"
 )
 
@@ -53,6 +56,13 @@ func TestChubCard(t *testing.T) {
 		ev := emitted(t, sent)
 		if ev.Item != item || ev.Avatar == "" || !slices.Contains(sources(t, ev.Card), item) {
 			t.Errorf("%s: item %q, avatar %q, source %q", page, ev.Item, ev.Avatar, sources(t, ev.Card))
+		}
+		b, err := os.ReadFile(ev.Avatar)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := card.Decode(b); !errors.Is(err, card.ErrNotCard) {
+			t.Errorf("%s: the avatar still carries the card: err = %v", page, err)
 		}
 	}
 }
