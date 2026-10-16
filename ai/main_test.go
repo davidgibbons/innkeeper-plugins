@@ -42,7 +42,9 @@ func (f *fakeLLM) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if f.status != 0 {
 		w.WriteHeader(f.status)
-		fmt.Fprint(w, `{"error": {"message": "refused by the fake", "type": "invalid_request_error"}}`)
+		// The message echoes the key, as some providers' do, to check the plugin hides it.
+		msg, _ := json.Marshal("refused by the fake for " + r.Header.Get("Authorization"))
+		fmt.Fprintf(w, `{"error": {"message": %s, "type": "invalid_request_error"}}`, msg)
 		return
 	}
 	switch {
