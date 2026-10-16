@@ -19,7 +19,7 @@ Settings has two tabs.
 
 ## Actions
 
-The actions fall into four groups in the card editor.
+The actions fall into four groups by what they do.
 
 | Group | ID | Runs on | Does |
 |---|---|---|---|
