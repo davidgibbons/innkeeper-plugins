@@ -58,12 +58,17 @@ func parseSettings(cfg map[string]any) (settings, error) {
 	if _, ok := providers[s.Provider]; !ok {
 		return s, fmt.Errorf("settings: provider %q isn't one of %s", s.Provider, strings.Join(slices.Sorted(maps.Keys(providers)), ", "))
 	}
-	if len(s.Kinds) == 0 {
+	kindNames := strings.Join(slices.Sorted(maps.Keys(kinds)), ", ")
+	// No kinds field means chat; a saved form with every box unticked sends [].
+	if s.Kinds == nil {
 		s.Kinds = []string{"chat"}
+	}
+	if len(s.Kinds) == 0 {
+		return s, fmt.Errorf("settings: tick at least one of %s", kindNames)
 	}
 	for _, k := range s.Kinds {
 		if _, ok := kinds[k]; !ok {
-			return s, fmt.Errorf("settings: kind %q isn't one of %s", k, strings.Join(slices.Sorted(maps.Keys(kinds)), ", "))
+			return s, fmt.Errorf("settings: kind %q isn't one of %s", k, kindNames)
 		}
 	}
 	return s, nil

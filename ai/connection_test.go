@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestConnect(t *testing.T) {
+func TestConnectRefusesBadSettings(t *testing.T) {
 	cases := []struct {
 		config  map[string]any
 		key     string
@@ -27,6 +27,7 @@ func TestConnect(t *testing.T) {
 		{map[string]any{"provider": "skynet", "model": "m"}, "", "provider"},
 		{map[string]any{"provider": "ollama"}, "", "model"},
 		{map[string]any{"provider": "ollama", "model": "m", "kinds": []any{"draw"}}, "", "kind"},
+		{map[string]any{"provider": "ollama", "model": "m", "kinds": []any{}}, "", "tick"},
 		{map[string]any{"provider": "openai", "model": "e", "kinds": []any{"embed"}}, "k", ""},
 		{map[string]any{"provider": "ollama", "model": "e", "kinds": []any{"embed"}}, "", ""},
 		{map[string]any{"provider": "anthropic", "model": "c", "kinds": []any{"embed"}}, "k", "embeddings"},
@@ -43,17 +44,19 @@ func TestConnect(t *testing.T) {
 	}
 }
 
-func TestParseSettingsDefaultsKindsToChat(t *testing.T) {
-	for name, cfg := range map[string]map[string]any{
-		"absent": {"provider": "ollama", "model": "m"},
-		"empty":  {"provider": "ollama", "model": "m", "kinds": []any{}},
-	} {
-		s, err := parseSettings(cfg)
-		if err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-		if !slices.Equal(s.Kinds, []string{"chat"}) {
-			t.Errorf("%s: kinds = %v, want [chat]", name, s.Kinds)
-		}
+func TestParseSettingsDefaultsAbsentKindsToChat(t *testing.T) {
+	s, err := parseSettings(map[string]any{"provider": "ollama", "model": "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(s.Kinds, []string{"chat"}) {
+		t.Errorf("kinds = %v, want [chat]", s.Kinds)
+	}
+}
+
+func TestParseSettingsRefusesEmptyKinds(t *testing.T) {
+	_, err := parseSettings(map[string]any{"provider": "ollama", "model": "m", "kinds": []any{}})
+	if err == nil || !strings.Contains(err.Error(), "tick at least one of chat, embed") {
+		t.Errorf("err = %v, want one asking to tick a kind", err)
 	}
 }
