@@ -1,13 +1,19 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/davidgibbons/innkeeper/protocol"
 	anyllm "github.com/mozilla-ai/any-llm-go"
+	"github.com/mozilla-ai/any-llm-go/config"
 	llmerrors "github.com/mozilla-ai/any-llm-go/errors"
 )
 
@@ -108,6 +114,68 @@ func TestChatRefusalIsAIRejected(t *testing.T) {
 	if rpcCode(err) != protocol.CodeAIRejected {
 		t.Fatalf("err = %v, want code %d", err, protocol.CodeAIRejected)
 	}
+}
+
+func TestChatContextLengthAndContentFilterAreAIRejected(t *testing.T) {
+	for _, code := range []string{"context_length_exceeded", "content_filter"} {
+		h := started(t, withLLM(t, &fakeLLM{status: 400, code: code}))
+		err := h.call(protocol.MethodAIChat, protocol.AIChatParams{Messages: []protocol.ChatMessage{{Role: "user", Content: "Hi"}}}, nil)
+		if rpcCode(err) != protocol.CodeAIRejected {
+			t.Errorf("%s: err = %v, want code %d", code, err, protocol.CodeAIRejected)
+		}
+	}
+}
+
+// wantRetryable fails unless err is a retryable internal error.
+func wantRetryable(t *testing.T, name string, err error) {
+	t.Helper()
+	var rpcErr *protocol.Error
+	if !errors.As(err, &rpcErr) || rpcErr.Code != protocol.CodeInternalError || !rpcErr.Retryable() {
+		t.Errorf("%s: err = %v, want a retryable %d", name, err, protocol.CodeInternalError)
+	}
+}
+
+// streamError is modelError of one chat request to provider, built with opts.
+func streamError(t *testing.T, provider string, opts ...config.Option) error {
+	t.Helper()
+	llm, err := providers[provider](opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &connection{settings: settings{Provider: provider, Model: "m"}, llm: llm}
+	_, _, err = stream(context.Background(), c, anyllm.CompletionParams{Model: "m", MaxTokens: new(int),
+		Messages: []anyllm.Message{{Role: anyllm.RoleUser, Content: "Hi"}}}, func(string) {})
+	if err == nil {
+		t.Fatalf("%s: no error", provider)
+	}
+	return modelError(err)
+}
+
+func TestChatOverloadIsRetryable(t *testing.T) {
+	h := started(t, withLLM(t, &fakeLLM{status: 503}))
+	err := h.call(protocol.MethodAIChat, protocol.AIChatParams{Messages: []protocol.ChatMessage{{Role: "user", Content: "Hi"}}}, nil)
+	wantRetryable(t, "503", err)
+
+	ts := httptest.NewServer(&fakeLLM{status: 529})
+	t.Cleanup(ts.Close)
+	wantRetryable(t, "anthropic 529", streamError(t, "anthropic", config.WithBaseURL(ts.URL), config.WithAPIKey("k")))
+}
+
+func TestClientTimeoutIsRetryable(t *testing.T) {
+	stall := make(chan struct{})
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-stall }))
+	t.Cleanup(ts.Close)
+	t.Cleanup(func() { close(stall) })
+	wantRetryable(t, "client timeout", streamError(t, "openai-compatible", config.WithBaseURL(ts.URL), config.WithTimeout(50*time.Millisecond)))
+	// A read deadline's timeout is a net.Error, not context.DeadlineExceeded.
+	conn, err := net.Dial("tcp", ts.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetReadDeadline(time.Now())
+	_, err = conn.Read(make([]byte, 1))
+	wantRetryable(t, "read timeout", modelError(err))
 }
 
 func TestChatNotOfferedIsMethodNotFound(t *testing.T) {

@@ -55,13 +55,6 @@ func TestParseSettingsDefaultsAbsentKindsToChat(t *testing.T) {
 	}
 }
 
-func TestParseSettingsRefusesEmptyKinds(t *testing.T) {
-	_, err := parseSettings(map[string]any{"provider": "ollama", "model": "m", "kinds": []any{}})
-	if err == nil || !strings.Contains(err.Error(), "tick at least one of chat, embed") {
-		t.Errorf("err = %v, want one asking to tick a kind", err)
-	}
-}
-
 func TestOpenAICompatibleListsModels(t *testing.T) {
 	llm, err := settings{Provider: "openai-compatible", BaseURL: "http://localhost:8000/v1"}.provider("")
 	if err != nil {

@@ -18,10 +18,11 @@ import (
 
 // fakeLLM serves the OpenAI-compatible endpoints the plugin calls. chat is
 // the SSE delta objects every chat request streams; status, when set, fails
-// every request with it.
+// every request with it and the error code code.
 type fakeLLM struct {
 	mu       sync.Mutex
 	status   int
+	code     string
 	chat     []string
 	paths    []string
 	requests []map[string]any
@@ -41,10 +42,12 @@ func (f *fakeLLM) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	if f.status != 0 {
+		// The SDKs would otherwise retry a 5xx themselves.
+		w.Header().Set("X-Should-Retry", "false")
 		w.WriteHeader(f.status)
 		// The message echoes the key, as some providers' do, to check the plugin hides it.
 		msg, _ := json.Marshal("refused by the fake for " + r.Header.Get("Authorization"))
-		fmt.Fprintf(w, `{"error": {"message": %s, "type": "invalid_request_error"}}`, msg)
+		fmt.Fprintf(w, `{"error": {"message": %s, "type": "invalid_request_error", "code": %q}}`, msg, f.code)
 		return
 	}
 	switch {

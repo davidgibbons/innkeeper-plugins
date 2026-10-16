@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"slices"
 	"strings"
 
@@ -128,10 +129,15 @@ func mergeToolCalls(provider string, calls, deltas []anyllm.ToolCall) []anyllm.T
 // modelError gives a model failure the code a consumer branches on: a
 // refused request, which retrying won't fix, or a retryable one.
 func modelError(err error) error {
+	var netErr net.Error
 	switch {
-	case errors.Is(err, llmerrors.ErrInvalidRequest), errors.Is(err, llmerrors.ErrUnsupportedParam):
+	case errors.Is(err, llmerrors.ErrInvalidRequest), errors.Is(err, llmerrors.ErrUnsupportedParam),
+		errors.Is(err, llmerrors.ErrContextLength), errors.Is(err, llmerrors.ErrContentFilter):
 		return protocol.NewError(protocol.CodeAIRejected, err.Error(), false)
-	case errors.Is(err, llmerrors.ErrRateLimit), errors.Is(err, context.DeadlineExceeded):
+	// ponytail: any-llm-go never sets ProviderError.StatusCode, so a rare 4xx such as
+	// 422 is retried with the 5xx and 529s; read each SDK's status if that costs.
+	case errors.Is(err, llmerrors.ErrRateLimit), errors.Is(err, llmerrors.ErrProvider),
+		errors.Is(err, context.DeadlineExceeded), errors.As(err, &netErr) && netErr.Timeout():
 		return protocol.NewError(protocol.CodeInternalError, err.Error(), true)
 	}
 	return err
