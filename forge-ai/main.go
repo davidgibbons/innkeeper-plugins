@@ -15,7 +15,7 @@ import (
 	"github.com/davidgibbons/innkeeper/protocol"
 )
 
-const version = "0.4.0"
+const version = "0.5.0"
 
 // instance is the setup initialize configured. err is a settings problem,
 // reported by the first run. store is nil without a database_url.
