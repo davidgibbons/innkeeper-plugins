@@ -176,17 +176,44 @@ func TestPlanCarriesTheDirectionAndNamesTheFields(t *testing.T) {
 	if _, err := h.run(t, p); err != nil {
 		t.Fatal(err)
 	}
-	system := systemPrompt(llm.requests[0])
 	if !strings.Contains(userPrompt(llm.requests[0]), "The owner's direction: make him the brother of @cards/Billy") {
 		t.Fatalf("plan user prompt:\n%s", userPrompt(llm.requests[0]))
 	}
-	for _, k := range cardKeys {
-		if !strings.Contains(system, `"`+k+`"`) {
-			t.Errorf("plan system prompt never names %q", k)
-		}
-	}
 	if _, ok := llm.requests[0]["tools"]; ok {
 		t.Error("the plan offered tools")
+	}
+}
+
+func TestPlanContractListsOnlyTheActionsFields(t *testing.T) {
+	system, _, err := wholeCardRun(t, "tighten").planPrompts(settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, after, ok := strings.Cut(system, "whose keys are the fields to plan, ")
+	if !ok {
+		t.Fatalf("no JSON contract line:\n%s", system)
+	}
+	keys, _, _ := strings.Cut(after, ", each with")
+	if keys == "" || strings.Contains(keys, `"name"`) || !strings.Contains(keys, `"description"`) {
+		t.Fatalf("contract keys = %s", keys)
+	}
+}
+
+func TestWholeCardResultKeepsEveryRawReply(t *testing.T) {
+	_, cfg := withLLM(t,
+		streamed(`{"description": "Cut the repeated height."}`),
+		streamed(`{"description": "A towering orc."}`))
+	h := startPlugin(t, cfg)
+	p := sampleRun(t, "tighten")
+	p.Field = ""
+	res, err := h.run(t, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Plan:", "Cut the repeated height.", label("description") + ":", "A towering orc."} {
+		if !strings.Contains(res.Raw, want) {
+			t.Errorf("Raw lacks %q:\n%s", want, res.Raw)
+		}
 	}
 }
 

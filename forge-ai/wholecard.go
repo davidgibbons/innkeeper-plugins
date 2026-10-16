@@ -11,17 +11,18 @@ import (
 
 // planLimits are the plan call's temperature and max tokens, unless the
 // instance sets its own.
-var planLimits = action{temperature: 0.3, maxTokens: 2048}
+var planLimits = action{temperature: 0.3, maxTokens: 4096}
 
 // wholeCard runs a field action on the whole card: one call plans a note per
 // field, then the action runs on each planned field in turn, against the card
 // as the fields before it left it.
 func (srv *server) wholeCard(ctx context.Context, in *instance, r *run) (*protocol.ActionRunResult, error) {
 	_ = srv.conn.Notify(protocol.NotifyProgress, protocol.Progress{Run: r.Run, Total: 1, Message: "Planning " + r.Label})
-	notes, err := srv.plan(ctx, in, r)
+	notes, planText, err := srv.plan(ctx, in, r)
 	if err != nil {
 		return nil, fmt.Errorf("plan: %w", err)
 	}
+	raw := []string{"Plan:\n" + planText}
 	var planned []string
 	for _, f := range r.Fields {
 		if notes[f] != "" {
@@ -39,6 +40,7 @@ func (srv *server) wholeCard(ctx context.Context, in *instance, r *run) (*protoc
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", label(f), err)
 		}
+		raw = append(raw, label(f)+":\n"+res.Raw)
 		if err := json.Unmarshal(res.Proposal, &r.draft); err != nil {
 			return nil, err
 		}
@@ -47,26 +49,27 @@ func (srv *server) wholeCard(ctx context.Context, in *instance, r *run) (*protoc
 	if err != nil {
 		return nil, err
 	}
-	return &protocol.ActionRunResult{Proposal: proposal}, nil
+	return &protocol.ActionRunResult{Proposal: proposal, Raw: strings.Join(raw, "\n\n")}, nil
 }
 
 // plan returns the model's note per field of r's, leaving out each it skips
-// or doesn't mention. Keys that aren't r's fields are ignored.
-func (srv *server) plan(ctx context.Context, in *instance, r *run) (map[string]string, error) {
+// or doesn't mention, and the model's reply text. Keys that aren't r's fields
+// are ignored.
+func (srv *server) plan(ctx context.Context, in *instance, r *run) (map[string]string, string, error) {
 	system, user, err := r.planPrompts(in.settings)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	temperature, maxTokens := planLimits.limits(in.settings)
 	req := protocol.AIChatParams{Temperature: &temperature, MaxTokens: &maxTokens,
 		Messages: []protocol.ChatMessage{{Role: "system", Content: system}, {Role: "user", Content: user}}}
 	reply, err := srv.complete(ctx, in, r.Run, req, toolbox{}, noProgress)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	obj, err := parseObject(reply.Text)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	notes := map[string]string{}
 	for _, f := range r.Fields {
@@ -76,13 +79,13 @@ func (srv *server) plan(ctx context.Context, in *instance, r *run) (map[string]s
 		}
 		var note string
 		if err := json.Unmarshal(raw, &note); err != nil {
-			return nil, fmt.Errorf("the model's note for %s isn't text", f)
+			return nil, "", fmt.Errorf("the model's note for %s isn't text", f)
 		}
 		if note = strings.TrimSpace(note); note != "" && !strings.EqualFold(note, "skip") {
 			notes[f] = note
 		}
 	}
-	return notes, nil
+	return notes, reply.Text, nil
 }
 
 // noProgress gives a request no progress messages of its own.
