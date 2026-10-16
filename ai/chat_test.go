@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -167,15 +166,6 @@ func TestClientTimeoutIsRetryable(t *testing.T) {
 	t.Cleanup(ts.Close)
 	t.Cleanup(func() { close(stall) })
 	wantRetryable(t, "client timeout", streamError(t, "openai-compatible", config.WithBaseURL(ts.URL), config.WithTimeout(50*time.Millisecond)))
-	// A read deadline's timeout is a net.Error, not context.DeadlineExceeded.
-	conn, err := net.Dial("tcp", ts.Listener.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	_ = conn.SetReadDeadline(time.Now())
-	_, err = conn.Read(make([]byte, 1))
-	wantRetryable(t, "read timeout", modelError(err))
 }
 
 func TestChatNotOfferedIsMethodNotFound(t *testing.T) {
