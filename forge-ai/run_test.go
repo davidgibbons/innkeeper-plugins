@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // fakeLLM stands in for an ai instance: the fake host answers each ai.chat

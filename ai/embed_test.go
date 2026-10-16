@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 func TestEmbedReturnsVectorsInTextOrder(t *testing.T) {

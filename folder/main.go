@@ -11,10 +11,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/davidgibbons/innkeeper-plugins/card"
-	"github.com/davidgibbons/innkeeper-plugins/catalogkit"
-	"github.com/davidgibbons/innkeeper-plugins/internal/pluginio"
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper-plugins/card"
+	"github.com/inkandale/innkeeper-plugins/catalogkit"
+	"github.com/inkandale/innkeeper-plugins/internal/pluginio"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 const version = "0.1.0"

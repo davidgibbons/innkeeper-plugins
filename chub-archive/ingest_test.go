@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/davidgibbons/innkeeper-plugins/catalogkit"
-	"github.com/davidgibbons/innkeeper-plugins/internal/pgtest"
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper-plugins/catalogkit"
+	"github.com/inkandale/innkeeper-plugins/internal/pgtest"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 func testEnv(t *testing.T) *env {

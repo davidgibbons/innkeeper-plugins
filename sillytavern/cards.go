@@ -10,9 +10,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/davidgibbons/innkeeper-plugins/card"
-	"github.com/davidgibbons/innkeeper-plugins/internal/pluginio"
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper-plugins/card"
+	"github.com/inkandale/innkeeper-plugins/internal/pluginio"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // v2Fields are the fields SillyTavern's own code expects every card to have.

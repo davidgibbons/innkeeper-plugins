@@ -6,7 +6,7 @@ import (
 	"errors"
 	"os"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // skillType is the one record type the manifest declares.

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 func TestTavern(t *testing.T) {

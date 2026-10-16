@@ -13,7 +13,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // fakeLLM serves the OpenAI-compatible endpoints the plugin calls. chat is

@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 func TestPublish(t *testing.T) {

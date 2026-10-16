@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 const evaluated = `{"summary": "Solid.", "overall_score": 82, "card_type": "character", "dimensions": {

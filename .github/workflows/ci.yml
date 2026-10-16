@@ -8,9 +8,6 @@ on:
 permissions:
   contents: read
 
-env:
-  GOPRIVATE: github.com/davidgibbons/innkeeper
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -30,17 +27,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      # The core repo is private; a read-only deploy key on it lets Go fetch it.
-      - name: Read access to innkeeper
-        env:
-          DEPLOY_KEY: ${{ secrets.INNKEEPER_DEPLOY_KEY }}
-        run: |
-          test -n "$DEPLOY_KEY" || { echo "INNKEEPER_DEPLOY_KEY is not set; add a read-only deploy key for davidgibbons/innkeeper as a repository secret"; exit 1; }
-          mkdir -p -m 700 ~/.ssh
-          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          echo 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' >> ~/.ssh/known_hosts
-          git config --global url."git@github.com:davidgibbons/innkeeper".insteadOf https://github.com/davidgibbons/innkeeper
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod

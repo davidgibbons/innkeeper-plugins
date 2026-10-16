@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // textFields are the card's prose fields, which field actions run on.

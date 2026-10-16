@@ -11,7 +11,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 type entry struct {

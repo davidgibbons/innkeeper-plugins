@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 const (

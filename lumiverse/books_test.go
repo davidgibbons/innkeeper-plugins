@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 func lorebook(entries ...map[string]any) json.RawMessage {

@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/davidgibbons/innkeeper/cardhash"
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/cardhash"
+	"github.com/inkandale/innkeeper/protocol"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/image/draw"

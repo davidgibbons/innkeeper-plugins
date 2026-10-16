@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davidgibbons/innkeeper-plugins/catalogkit"
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper-plugins/catalogkit"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // TestRealDump ingests a real dump: CHUB_DUMP is its path, CHUB_IMAGES the

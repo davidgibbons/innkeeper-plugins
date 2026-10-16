@@ -6,7 +6,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 //go:embed prompts/*.tmpl

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // recorder keeps the notifications an import sends.

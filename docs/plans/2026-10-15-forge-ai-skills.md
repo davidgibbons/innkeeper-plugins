@@ -12,7 +12,7 @@ per instance. The `records.*` methods read and write it. Each skill has an
 prompt and offers `load_skill` and `load_skill_file` tools, which join the
 library tools in the existing tool loop in `chat.go`.
 
-**Tech Stack:** Go 1.27, `github.com/davidgibbons/innkeeper/protocol`
+**Tech Stack:** Go 1.27, `github.com/inkandale/innkeeper/protocol`
 (records types, unreleased), `pgx/v5`, `archive/zip`, `gopkg.in/yaml.v3`
 (already in the module graph), any-llm-go.
 
@@ -117,7 +117,7 @@ pass, commit.
 
 ### Task 7: Build against the unreleased core
 
-- [ ] `go.mod`: `replace github.com/davidgibbons/innkeeper => ../innkeeper-forge-5`;
+- [ ] `go.mod`: `replace github.com/inkandale/innkeeper => ../innkeeper-forge-5`;
   `go mod tidy`.
 - [ ] Commit `chore: build against the unreleased records protocol`.
 

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 	anyllm "github.com/mozilla-ai/any-llm-go"
 	"github.com/mozilla-ai/any-llm-go/config"
 	llmerrors "github.com/mozilla-ai/any-llm-go/errors"

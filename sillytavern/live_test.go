@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davidgibbons/innkeeper-plugins/card"
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper-plugins/card"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // TestLive runs against a real SillyTavern server. It pushes SillyTavern's

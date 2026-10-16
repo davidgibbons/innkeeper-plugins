@@ -7,9 +7,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/davidgibbons/innkeeper-plugins/card"
-	"github.com/davidgibbons/innkeeper-plugins/internal/pluginio"
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper-plugins/card"
+	"github.com/inkandale/innkeeper-plugins/internal/pluginio"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // targetInfo answers target.describe. url-import follows a source's page

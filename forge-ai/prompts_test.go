@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/BurntSushi/toml"
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 const sampleCard = `{"name": "Brakka", "description": "A very big, very tall orc who guards {{user}}.", "personality": "Gruff.",

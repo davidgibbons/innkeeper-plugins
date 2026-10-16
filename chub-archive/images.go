@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/davidgibbons/innkeeper-plugins/internal/pluginio"
+	"github.com/inkandale/innkeeper-plugins/internal/pluginio"
 )
 
 // imageExts are the image types the store keeps, most common first, since

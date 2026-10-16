@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // qualityKey holds the evaluation's overall score; each dimension's score

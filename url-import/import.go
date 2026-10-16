@@ -12,9 +12,9 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/davidgibbons/innkeeper-plugins/card"
-	"github.com/davidgibbons/innkeeper-plugins/internal/pluginio"
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper-plugins/card"
+	"github.com/inkandale/innkeeper-plugins/internal/pluginio"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // params are an import's settings: URL, the page of a card or lorebook.

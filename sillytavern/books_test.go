@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 func testBook(name string, entries ...map[string]any) map[string]any {

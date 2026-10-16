@@ -9,7 +9,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/davidgibbons/innkeeper-plugins/internal/pluginio"
+	"github.com/inkandale/innkeeper-plugins/internal/pluginio"
 )
 
 // isZip reports whether b is a zip, perhaps with data in front of it, such as

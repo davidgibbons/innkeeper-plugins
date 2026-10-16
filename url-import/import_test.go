@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 type roundTrip func(*http.Request) (*http.Response, error)
