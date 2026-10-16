@@ -51,8 +51,11 @@ func (r *run) prompts(s settings) (system, user string, err error) {
 		if d.Card, err = indented(card); err != nil {
 			return "", "", err
 		}
-		if r.Field != "" {
-			d.FieldText, _ = card[r.Field].(string)
+		switch v := card[r.Field].(type) {
+		case string:
+			d.FieldText = v
+		case []string:
+			d.FieldText = strings.Join(v, ", ")
 		}
 		if r.appends != nil && r.appends.existing != nil {
 			list, err := r.appends.existing(r)

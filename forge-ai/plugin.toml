@@ -25,7 +25,7 @@ description = "Leave empty to use each action's own."
 [config.properties.max_tokens]
 type = "integer"
 title = "Max tokens"
-description = "Leave empty to use each action's own: 8192 for whole-card actions, 4096 for the rest."
+description = "Leave empty to use each action's own: 8192 for Forge, alternate greetings, and lore entries, 4096 for the rest."
 
 [config.properties.house_style]
 type = "string"
@@ -39,14 +39,12 @@ description = "Added to one action's system prompt."
 
 [config.properties.additions.properties]
 generate = { type = "string", title = "Forge" }
-revise = { type = "string", title = "Reforge" }
+revise = { type = "string", title = "Revise" }
 evaluate = { type = "string", title = "Evaluate" }
-tighten-card = { type = "string", title = "Tighten card" }
 change-pov = { type = "string", title = "Change point of view" }
 tighten = { type = "string", title = "Tighten" }
 expand = { type = "string", title = "Expand" }
 to-prose = { type = "string", title = "Convert to prose" }
-rewrite = { type = "string", title = "Rewrite" }
 examples = { type = "string", title = "Write examples" }
 alternate-greetings = { type = "string", title = "Write alternate greetings" }
 lore-entries = { type = "string", title = "Write lore entries" }

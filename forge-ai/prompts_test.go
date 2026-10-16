@@ -35,7 +35,9 @@ func sampleRun(t *testing.T, id string) protocol.ActionRunParams {
 		p.Entity = protocol.ActionEntity{Kind: "lorebook", Data: json.RawMessage(sampleLorebook)}
 		p.Context.Cards = []protocol.ContextItem{{ID: 7, Name: "Brakka", Data: json.RawMessage(sampleCard)}}
 	}
-	if len(a.Fields) > 0 {
+	if slices.Contains(a.Fields, "description") {
+		p.Field = "description"
+	} else if len(a.Fields) > 0 {
 		p.Field = a.Fields[0]
 	}
 	if a.Instruction {

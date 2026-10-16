@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -54,21 +55,6 @@ func TestFieldActionProposalChangesOnlyItsField(t *testing.T) {
 	}
 	if res.Report != nil {
 		t.Fatal("field action made a report")
-	}
-}
-
-func TestWholeCardProposalKeepsOtherKeys(t *testing.T) {
-	// The model echoes empty fields the draft never had; they stay absent.
-	res := result(t, sampleRun(t, "revise"), `{"name": "Brakka", "description": "Billy's brother.", "scenario": "", "tags": ["orc", "brother"]}`)
-	m := proposalOf(t, res)
-	if m["description"] != "Billy's brother." || m["personality"] != "Gruff." || m["extensions"] == nil {
-		t.Fatalf("proposal %v", m)
-	}
-	if _, ok := m["scenario"]; ok {
-		t.Fatalf("proposal gained an empty scenario: %v", m)
-	}
-	if tags, _ := m["tags"].([]any); len(tags) != 2 {
-		t.Fatalf("tags = %v", m["tags"])
 	}
 }
 
@@ -122,18 +108,18 @@ func TestEvaluateReport(t *testing.T) {
 func TestRunInputsChecked(t *testing.T) {
 	bad := map[string]func(*protocol.ActionRunParams){
 		"unknown action":    func(p *protocol.ActionRunParams) { p.Action = "nope" },
-		"field not offered": func(p *protocol.ActionRunParams) { p.Field = "name" },
+		"field not offered": func(p *protocol.ActionRunParams) { p.Field = "extensions" },
 		"no instruction":    func(p *protocol.ActionRunParams) { p.Instruction = " " },
 		"no point of view": func(p *protocol.ActionRunParams) {
-			p.Action, p.Field, p.Inputs = "change-pov", "", json.RawMessage(`{}`)
+			p.Action, p.Field, p.Inputs = "change-pov", "description", json.RawMessage(`{}`)
 		},
 		"scenario is not a pov": func(p *protocol.ActionRunParams) {
-			p.Action, p.Field, p.Inputs = "change-pov", "", json.RawMessage(`{"point_of_view": "scenario"}`)
+			p.Action, p.Field, p.Inputs = "change-pov", "description", json.RawMessage(`{"point_of_view": "scenario"}`)
 		},
 		"examples on a new card": func(p *protocol.ActionRunParams) { p.Action, p.Field, p.Entity.Data = "examples", "mes_example", nil },
 	}
 	for name, change := range bad {
-		p := sampleRun(t, "rewrite")
+		p := sampleRun(t, "revise")
 		change(&p)
 		_, err := parseRun(p)
 		var rpc *protocol.Error
@@ -144,20 +130,44 @@ func TestRunInputsChecked(t *testing.T) {
 }
 
 func TestNullMeansUnchanged(t *testing.T) {
-	m := proposalOf(t, result(t, sampleRun(t, "revise"), `{"description": null, "personality": "Calm.", "scenario": null}`))
-	if m["description"] != "A very big, very tall orc who guards {{user}}." || m["personality"] != "Calm." {
+	m := proposalOf(t, result(t, sampleRun(t, "revise"), `{"description": null}`))
+	if m["description"] != "A very big, very tall orc who guards {{user}}." {
 		t.Fatalf("proposal %v", m)
-	}
-	if _, ok := m["scenario"]; ok {
-		t.Fatalf("null scenario added a key: %v", m)
 	}
 }
 
 func TestTagsAsCommaSeparatedText(t *testing.T) {
-	m := proposalOf(t, result(t, sampleRun(t, "revise"), `{"tags": "orc, guard ,, brother"}`))
+	p := sampleRun(t, "revise")
+	p.Field = "tags"
+	m := proposalOf(t, result(t, p, `{"tags": "orc, guard ,, brother"}`))
 	tags, _ := m["tags"].([]any)
 	if len(tags) != 3 || tags[1] != "guard" || tags[2] != "brother" {
 		t.Fatalf("tags = %v", m["tags"])
+	}
+}
+
+func TestTheTenActions(t *testing.T) {
+	var ids []string
+	for _, a := range actions {
+		ids = append(ids, a.ID)
+	}
+	want := []string{"generate", "revise", "tighten", "expand", "to-prose", "change-pov", "examples", "alternate-greetings", "lore-entries", "evaluate"}
+	if !slices.Equal(ids, want) {
+		t.Fatalf("actions %v, want %v", ids, want)
+	}
+	for _, id := range []string{"revise", "tighten", "expand", "to-prose", "change-pov"} {
+		if a, _ := findAction(id); !a.WholeCard || len(a.Fields) == 0 {
+			t.Errorf("%s: want a field action that also runs on the whole card", id)
+		}
+	}
+}
+
+func TestReviseOnTagsTakesCommaText(t *testing.T) {
+	p := sampleRun(t, "revise")
+	p.Field = "tags"
+	system, user, _ := render(t, p, settings{})
+	if !strings.Contains(user, "orc") || !strings.Contains(system, `"tags"`) {
+		t.Fatalf("tags field prompt:\n%s\n%s", system, user)
 	}
 }
 

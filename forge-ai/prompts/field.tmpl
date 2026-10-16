@@ -1,7 +1,7 @@
 [[- define "field-rules" -]]
-You edit one field of a roleplay character card: "[[.Field]]". Return one JSON object with the single key "[[.Field]]", whose value is the new text.
+You edit one field of a roleplay character card: "[[.Field]]". Return one JSON object with the single key "[[.Field]]", whose value is the new text[[if eq .Field "tags"]]: the tags, separated by commas[[end]].
 
-Keep every {{char}} and {{user}} macro, <START> blocks, and the field's point of view and voice. The rest of the card is context; don't move its content into this field.
+Keep every {{char}} and {{user}} macro and <START> blocks[[if not .PointOfView]], and the field's point of view and voice[[end]]. The rest of the card is context; don't move its content into this field.
 [[- end]]
 
 [[- define "field.user" -]]
@@ -13,6 +13,7 @@ The field to edit, "[[.Field]]":
 
 The whole card, for context:
 [[.Card]]
+[[- template "context" .]]
 [[- end]]
 
 [[- define "tighten.system" -]]
@@ -42,11 +43,11 @@ Return only the JSON object: no code fence, no commentary.
 [[- end]]
 [[- define "to-prose.user" -]][[template "field.user" .]][[end]]
 
-[[- define "rewrite.system" -]]
+[[- define "revise.system" -]]
 [[template "field-rules" .]]
 
-Rewrite it as the owner's instruction asks. Change only what the instruction asks for, and keep the rest of the field's content.
+Change it as the owner's instruction asks. Change only what the instruction asks for, and keep the rest of the field's content, voice, and formatting.
 
 Return only the JSON object: no code fence, no commentary.
 [[- end]]
-[[- define "rewrite.user" -]][[template "field.user" .]][[end]]
+[[- define "revise.user" -]][[template "field.user" .]][[end]]

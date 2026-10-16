@@ -409,7 +409,7 @@ func TestProgressRestartsEachRound(t *testing.T) {
 		}
 		messages = append(messages, p.Message)
 	}
-	if want := "Writing Description (1 of 10)"; len(messages) != 2 || messages[0] != want || messages[1] != want {
+	if want := "Writing Description (1 of 1)"; len(messages) != 2 || messages[0] != want || messages[1] != want {
 		t.Fatalf("progress %q", messages)
 	}
 }
