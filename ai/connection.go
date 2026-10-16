@@ -100,7 +100,11 @@ func wrap[P anyllm.Provider](f func(...config.Option) (P, error)) newProvider {
 var providers = map[string]newProvider{
 	// For vLLM, llama.cpp servers, LM Studio, and OpenRouter, with or without a key.
 	"openai-compatible": wrap(func(opts ...config.Option) (*openai.CompatibleProvider, error) {
-		return openai.NewCompatible(openai.CompatibleConfig{Name: "openai-compatible"}, opts...)
+		// The zero Capabilities would make embeds and listsModels refuse it.
+		return openai.NewCompatible(openai.CompatibleConfig{Name: "openai-compatible", Capabilities: anyllm.Capabilities{
+			Completion: true, CompletionImage: true, CompletionStreaming: true, CompletionTools: true,
+			Embedding: true, ListModels: true,
+		}}, opts...)
 	}),
 	"openai":    wrap(openai.New),
 	"anthropic": wrap(anthropic.New),

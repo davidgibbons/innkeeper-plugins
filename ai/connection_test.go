@@ -30,6 +30,7 @@ func TestConnectRefusesBadSettings(t *testing.T) {
 		{map[string]any{"provider": "ollama", "model": "m", "kinds": []any{}}, "", "tick"},
 		{map[string]any{"provider": "openai", "model": "e", "kinds": []any{"embed"}}, "k", ""},
 		{map[string]any{"provider": "ollama", "model": "e", "kinds": []any{"embed"}}, "", ""},
+		{map[string]any{"provider": "openai-compatible", "model": "e", "base_url": "http://localhost:8000/v1", "kinds": []any{"embed"}}, "", ""},
 		{map[string]any{"provider": "anthropic", "model": "c", "kinds": []any{"embed"}}, "k", "embeddings"},
 		{map[string]any{"provider": "groq", "model": "m", "kinds": []any{"chat", "embed"}}, "k", "embeddings"},
 	}
@@ -58,5 +59,15 @@ func TestParseSettingsRefusesEmptyKinds(t *testing.T) {
 	_, err := parseSettings(map[string]any{"provider": "ollama", "model": "m", "kinds": []any{}})
 	if err == nil || !strings.Contains(err.Error(), "tick at least one of chat, embed") {
 		t.Errorf("err = %v, want one asking to tick a kind", err)
+	}
+}
+
+func TestOpenAICompatibleListsModels(t *testing.T) {
+	llm, err := settings{Provider: "openai-compatible", BaseURL: "http://localhost:8000/v1"}.provider("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !listsModels(llm) {
+		t.Error("openai-compatible doesn't list models")
 	}
 }
