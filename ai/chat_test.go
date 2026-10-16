@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -76,7 +78,7 @@ func TestChatReturnsWholeToolCalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.ToolCalls) != 1 || res.ToolCalls[0] != (protocol.ToolCall{ID: "x", Name: "get_card", Arguments: `{"id": 1}`}) {
+	if len(res.ToolCalls) != 1 || !reflect.DeepEqual(res.ToolCalls[0], protocol.ToolCall{ID: "x", Name: "get_card", Arguments: `{"id": 1}`}) {
 		t.Fatalf("tool calls %+v", res.ToolCalls)
 	}
 	req := llm.lastRequest()
@@ -220,5 +222,59 @@ func TestMergeToolCallsAcrossProviders(t *testing.T) {
 		if len(calls) != 2 || calls[0].Function.Arguments != `{"id": 1}` || calls[1].Function.Name != "get_lorebook" {
 			t.Fatalf("openai-compatible: calls %+v", calls)
 		}
+	}
+}
+
+// fakeGemini answers Gemini's streaming API with one tool call signed "sig"
+// and records each request body.
+func fakeGemini(t *testing.T) *[]map[string]any {
+	t.Helper()
+	var requests []map[string]any
+	var mu sync.Mutex
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		mu.Lock()
+		requests = append(requests, body)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, `data: {"candidates": [{"content": {"role": "model", "parts": [{"functionCall": {"name": "get_card", "args": {"id": 1}}, "thoughtSignature": "c2ln"}]}, "finishReason": "STOP"}]}`+"\n\n")
+	}))
+	t.Cleanup(ts.Close)
+	t.Setenv("GOOGLE_GEMINI_BASE_URL", ts.URL)
+	t.Setenv("GEMINI_API_KEY", "k")
+	return &requests
+}
+
+func TestChatReturnsAToolCallsProviderExtra(t *testing.T) {
+	fakeGemini(t)
+	h := started(t, map[string]any{"provider": "gemini", "model": "m"})
+	var res protocol.AIChatResult
+	if err := h.call(protocol.MethodAIChat, protocol.AIChatParams{
+		Messages: []protocol.ChatMessage{{Role: "user", Content: "Look up card 1."}}}, &res); err != nil {
+		t.Fatal(err)
+	}
+	if len(res.ToolCalls) != 1 || string(res.ToolCalls[0].Extra) != `{"gemini":{"thought_signature":"c2ln"}}` {
+		t.Fatalf("tool calls %+v", res.ToolCalls)
+	}
+}
+
+func TestChatSendsAnAssistantToolCallsExtraToTheProvider(t *testing.T) {
+	requests := fakeGemini(t)
+	h := started(t, map[string]any{"provider": "gemini", "model": "m"})
+	var res protocol.AIChatResult
+	err := h.call(protocol.MethodAIChat, protocol.AIChatParams{Messages: []protocol.ChatMessage{
+		{Role: "user", Content: "Look up card 7."},
+		{Role: "assistant", ToolCalls: []protocol.ToolCall{{ID: "a", Name: "get_card", Arguments: `{"id": 7}`,
+			Extra: json.RawMessage(`{"gemini": {"thought_signature": "bXlzaWc="}}`)}}},
+		{Role: "tool", ToolCallID: "a", Content: "Billy"},
+	}}, &res)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := (*requests)[0]["contents"].([]any)[1].(map[string]any)
+	part := model["parts"].([]any)[0].(map[string]any)
+	if part["thoughtSignature"] != "bXlzaWc=" {
+		t.Fatalf("model turn %v", model)
 	}
 }

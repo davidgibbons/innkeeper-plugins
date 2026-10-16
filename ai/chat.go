@@ -36,7 +36,13 @@ func (srv *server) chat(ctx context.Context, params json.RawMessage) (any, error
 	}
 	res := protocol.AIChatResult{Text: text, Model: c.settings.Model}
 	for _, tc := range calls {
-		res.ToolCalls = append(res.ToolCalls, protocol.ToolCall{ID: tc.ID, Name: tc.Function.Name, Arguments: tc.Function.Arguments})
+		call := protocol.ToolCall{ID: tc.ID, Name: tc.Function.Name, Arguments: tc.Function.Arguments}
+		if tc.Extra != nil {
+			if call.Extra, err = json.Marshal(tc.Extra); err != nil {
+				return nil, fmt.Errorf("tool call %s: extra: %w", tc.ID, err)
+			}
+		}
+		res.ToolCalls = append(res.ToolCalls, call)
 	}
 	return res, nil
 }
@@ -57,12 +63,15 @@ func completionParams(model string, p protocol.AIChatParams) (anyllm.CompletionP
 			}
 			msg.Content = parts
 		}
-		// ponytail: any-llm-go's per-provider ToolCall.Extra (Gemini's thought
-		// signatures) doesn't cross ai.chat, so a Gemini tool loop loses its
-		// reasoning between turns; carry it in protocol.ToolCall if that bites.
 		for _, tc := range m.ToolCalls {
-			msg.ToolCalls = append(msg.ToolCalls, anyllm.ToolCall{ID: tc.ID, Type: "function",
-				Function: anyllm.FunctionCall{Name: tc.Name, Arguments: tc.Arguments}})
+			call := anyllm.ToolCall{ID: tc.ID, Type: "function",
+				Function: anyllm.FunctionCall{Name: tc.Name, Arguments: tc.Arguments}}
+			if len(tc.Extra) > 0 {
+				if err := json.Unmarshal(tc.Extra, &call.Extra); err != nil {
+					return req, fmt.Errorf("tool call %s: extra: %w", tc.ID, err)
+				}
+			}
+			msg.ToolCalls = append(msg.ToolCalls, call)
 		}
 		req.Messages = append(req.Messages, msg)
 	}
