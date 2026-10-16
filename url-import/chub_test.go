@@ -7,8 +7,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/davidgibbons/innkeeper-plugins/card"
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper-plugins/card"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 func chubSite(t *testing.T) *fetcher {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // planLimits are the plan call's temperature and max tokens, unless the

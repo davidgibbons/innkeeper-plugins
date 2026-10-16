@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 func newPlugin(t *testing.T, f *fake, username, password string) *plugin {

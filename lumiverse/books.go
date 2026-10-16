@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // bookFields are character_book fields Lumiverse doesn't store. The plugin

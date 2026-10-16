@@ -23,7 +23,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // now is a variable so the test can fix the date.

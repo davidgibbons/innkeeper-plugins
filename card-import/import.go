@@ -16,9 +16,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/davidgibbons/innkeeper-plugins/card"
-	"github.com/davidgibbons/innkeeper-plugins/internal/pluginio"
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper-plugins/card"
+	"github.com/inkandale/innkeeper-plugins/internal/pluginio"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 var sha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)

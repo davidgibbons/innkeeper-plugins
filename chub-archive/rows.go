@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/davidgibbons/innkeeper-plugins/card"
-	"github.com/davidgibbons/innkeeper-plugins/catalogkit"
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper-plugins/card"
+	"github.com/inkandale/innkeeper-plugins/catalogkit"
+	"github.com/inkandale/innkeeper/protocol"
 	"github.com/jackc/pgx/v5"
 )
 

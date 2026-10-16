@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 const collegeMD = "---\nname: college\ndescription: >\n  Campus life and classes.\n  Use for students.\n---\n\n# College\n\nSee references/campus.md.\n"

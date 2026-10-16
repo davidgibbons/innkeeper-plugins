@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/davidgibbons/innkeeper-plugins/internal/pgtest"
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper-plugins/internal/pgtest"
+	"github.com/inkandale/innkeeper/protocol"
 	"github.com/jackc/pgx/v5"
 )
 

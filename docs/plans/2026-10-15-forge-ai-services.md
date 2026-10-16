@@ -61,12 +61,12 @@ The changes:
 
 - [ ] **Step 1: Bump the pin to core main**
 
-Run: `go get github.com/davidgibbons/innkeeper@main && go mod tidy`
-Expected: `go.mod`'s `github.com/davidgibbons/innkeeper` line moves to a new pseudo-version.
+Run: `go get github.com/inkandale/innkeeper@main && go mod tidy`
+Expected: `go.mod`'s `github.com/inkandale/innkeeper` line moves to a new pseudo-version.
 
 - [ ] **Step 2: Check the contracts are there**
 
-Run: `go doc github.com/davidgibbons/innkeeper/protocol AIChatResult && go doc github.com/davidgibbons/innkeeper/protocol Action | grep WholeCard && go doc github.com/davidgibbons/innkeeper/protocol SettingsDefaultsResult`
+Run: `go doc github.com/inkandale/innkeeper/protocol AIChatResult && go doc github.com/inkandale/innkeeper/protocol Action | grep WholeCard && go doc github.com/inkandale/innkeeper/protocol SettingsDefaultsResult`
 Expected: `AIChatResult` lists `Model`, `Action` lists `WholeCard`, and `SettingsDefaultsResult` exists. If any is missing, stop: a prerequisite isn't merged.
 
 - [ ] **Step 3: Build and test**
@@ -369,8 +369,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/davidgibbons/innkeeper-plugins/internal/pluginio"
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper-plugins/internal/pluginio"
+	"github.com/inkandale/innkeeper/protocol"
 )
 ```
 
@@ -464,7 +464,7 @@ func imagePart(path string) (protocol.ContentPart, error) {
 
 - [ ] **Step 6: Update `forge-ai/skilltools.go`**
 
-Drop the `anyllm` import, and change `skillTools`' signature and return to `[]protocol.ChatTool`, importing `github.com/davidgibbons/innkeeper/protocol`:
+Drop the `anyllm` import, and change `skillTools`' signature and return to `[]protocol.ChatTool`, importing `github.com/inkandale/innkeeper/protocol`:
 
 ```go
 func skillTools(enabled []skill) []protocol.ChatTool {
@@ -1459,7 +1459,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // planLimits are the plan call's temperature and max tokens, unless the

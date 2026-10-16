@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // sourceKinds checks a ref of each kind url-import names and gives its source for the entity.

@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davidgibbons/innkeeper-plugins/internal/pgtest"
-	"github.com/davidgibbons/innkeeper/cardhash"
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper-plugins/internal/pgtest"
+	"github.com/inkandale/innkeeper/cardhash"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 func put(t *testing.T, s *Store, e Entry) {

@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davidgibbons/innkeeper-plugins/catalogkit"
-	"github.com/davidgibbons/innkeeper-plugins/internal/pgtest"
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper-plugins/catalogkit"
+	"github.com/inkandale/innkeeper-plugins/internal/pgtest"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 var t0 = time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)

@@ -10,7 +10,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 func card(fields map[string]any) json.RawMessage {

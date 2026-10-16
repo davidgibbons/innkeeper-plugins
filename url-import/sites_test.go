@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // The cases below are core's internal/library/detect_test.go, so url-import

@@ -10,8 +10,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/davidgibbons/innkeeper-plugins/internal/pluginio"
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper-plugins/internal/pluginio"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // maxToolRounds caps a run's requests to the model; the last offers no tools.

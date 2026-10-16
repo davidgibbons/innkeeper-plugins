@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // newTestClient connects to f in the given mode, with the credentials f expects.

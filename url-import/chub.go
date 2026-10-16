@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 const chubAPI = "https://api.chub.ai"

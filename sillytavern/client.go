@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // client calls one SillyTavern server's API as one user.

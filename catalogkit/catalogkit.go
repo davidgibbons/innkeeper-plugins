@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

@@ -16,7 +16,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // bookFields are the character_book fields SillyTavern doesn't use. They

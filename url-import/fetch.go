@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/davidgibbons/innkeeper-plugins/internal/pluginio"
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper-plugins/internal/pluginio"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // maxBody caps each response. RisuRealm's PNGs with embedded assets run past 10 MiB.

@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // TestLive runs against a real Lumiverse server. It creates one character and

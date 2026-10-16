@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davidgibbons/innkeeper-plugins/card"
+	"github.com/inkandale/innkeeper-plugins/card"
 )
 
 // fake is an in-memory SillyTavern with the routes the plugin uses, behaving

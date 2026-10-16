@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // maxForced caps the forced skills' instructions in one prompt.

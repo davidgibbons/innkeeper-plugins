@@ -12,8 +12,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/davidgibbons/innkeeper-plugins/internal/pluginio"
-	"github.com/davidgibbons/innkeeper/protocol"
+	"github.com/inkandale/innkeeper-plugins/internal/pluginio"
+	"github.com/inkandale/innkeeper/protocol"
 )
 
 // stringFields are the character's text fields, as Lumiverse names them.
