@@ -55,6 +55,8 @@ func (srv *server) handle(ctx context.Context, method string, params json.RawMes
 			Capabilities: []string{"ai", "settings"}, Services: c.services()}, nil
 	case protocol.MethodShutdown:
 		return nil, nil
+	case protocol.MethodAIChat:
+		return srv.chat(ctx, params)
 	}
 	return nil, protocol.MethodNotFound(method)
 }
