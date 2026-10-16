@@ -93,9 +93,9 @@ type host struct {
 	srv      *server
 }
 
-func startPlugin(t *testing.T, config map[string]any, secrets map[string]string) *host {
+func startPlugin(t *testing.T, config map[string]any) *host {
 	t.Helper()
-	return startWith(t, protocol.InitializeParams{Protocol: 1, Config: config, Secrets: secrets})
+	return startWith(t, protocol.InitializeParams{Protocol: 1, Config: config})
 }
 
 func startWith(t *testing.T, params protocol.InitializeParams) *host {
@@ -171,7 +171,7 @@ const generated = `<think>An orc courier, I think.</think>{"name": "Ash", "descr
 
 func TestRunStreamsProgressPerField(t *testing.T) {
 	llm, cfg := withLLM(t, streamed(generated))
-	h := startPlugin(t, cfg, nil)
+	h := startPlugin(t, cfg)
 	res, err := h.run(t, sampleRun(t, "generate"))
 	if err != nil {
 		t.Fatal(err)
@@ -208,7 +208,7 @@ func TestLibraryToolCallAnsweredByHost(t *testing.T) {
 	llm, cfg := withLLM(t,
 		toolCall("call_1", "get_card", `{"id": 7}`),
 		streamed(`{"name": "Brakka", "description": "Billy's brother."}`))
-	h := startPlugin(t, cfg, nil)
+	h := startPlugin(t, cfg)
 	h.library = func(p protocol.LibraryCallParams) (any, error) {
 		return protocol.MCPCallResult{Content: []protocol.MCPContent{{Type: "text", Text: `{"name": "Billy", "description": "A goblin."}`}}}, nil
 	}
@@ -240,7 +240,7 @@ func TestLibraryRefusalReachesTheModel(t *testing.T) {
 	llm, cfg := withLLM(t,
 		toolCall("call_1", "search_cards", `{"query": {"text": "Billy"}}`),
 		streamed(`{"description": "Alone."}`))
-	h := startPlugin(t, cfg, nil)
+	h := startPlugin(t, cfg)
 	if _, err := h.run(t, sampleRun(t, "revise")); err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestLibraryRefusalReachesTheModel(t *testing.T) {
 
 func TestNoToolsWithoutLibrary(t *testing.T) {
 	llm, cfg := withLLM(t, streamed(`{"description": "A towering orc."}`))
-	h := startPlugin(t, cfg, nil)
+	h := startPlugin(t, cfg)
 	if _, err := h.run(t, sampleRun(t, "tighten")); err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +263,7 @@ func TestNoToolsWithoutLibrary(t *testing.T) {
 
 func TestRetriesWithoutToolsWhenRejected(t *testing.T) {
 	llm, cfg := withLLM(t, fakeReply{status: 400}, streamed(`{"description": "Billy's brother."}`))
-	h := startPlugin(t, cfg, nil)
+	h := startPlugin(t, cfg)
 	p := sampleRun(t, "revise")
 	p.Context.Cards = []protocol.ContextItem{{ID: 7, Name: "Billy", Data: json.RawMessage(`{"name": "Billy"}`)}}
 	if _, err := h.run(t, p); err != nil {
@@ -280,14 +280,14 @@ func TestRetriesWithoutToolsWhenRejected(t *testing.T) {
 
 func TestModelErrorFailsTheRun(t *testing.T) {
 	_, cfg := withLLM(t, fakeReply{status: 400})
-	h := startPlugin(t, cfg, nil)
+	h := startPlugin(t, cfg)
 	if _, err := h.run(t, sampleRun(t, "tighten")); err == nil {
 		t.Fatal("a rejected request succeeded")
 	}
 }
 
 func TestRunWithoutSettingsFails(t *testing.T) {
-	h := startPlugin(t, map[string]any{}, nil)
+	h := startPlugin(t, map[string]any{})
 	_, err := h.run(t, sampleRun(t, "tighten"))
 	var rpc *protocol.Error
 	if !errors.As(err, &rpc) || rpc.Code == -32601 || !strings.Contains(rpc.Message, "connection") {
@@ -296,7 +296,7 @@ func TestRunWithoutSettingsFails(t *testing.T) {
 }
 
 func TestActionList(t *testing.T) {
-	h := startPlugin(t, map[string]any{}, nil)
+	h := startPlugin(t, map[string]any{})
 	var res protocol.ActionListResult
 	if err := h.conn.Call(context.Background(), protocol.MethodActionList, nil, &res); err != nil {
 		t.Fatal(err)
@@ -308,7 +308,7 @@ func TestActionList(t *testing.T) {
 
 func TestReferenceImageSent(t *testing.T) {
 	llm, cfg := withLLM(t, streamed(generated))
-	h := startPlugin(t, cfg, nil)
+	h := startPlugin(t, cfg)
 	img := t.TempDir() + "/ref.png"
 	// A PNG signature is enough for content sniffing.
 	if err := os.WriteFile(img, []byte("\x89PNG\r\n\x1a\n0000"), 0o600); err != nil {
@@ -335,7 +335,7 @@ func TestFinalRoundOffersNoTools(t *testing.T) {
 		replies = append(replies, toolCall("call_1", "get_card", `{"id": 7}`))
 	}
 	llm, cfg := withLLM(t, append(replies, streamed(`{"description": "Done."}`))...)
-	h := startPlugin(t, cfg, nil)
+	h := startPlugin(t, cfg)
 	if _, err := h.run(t, sampleRun(t, "revise")); err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +352,7 @@ func TestFinalRoundOffersNoTools(t *testing.T) {
 
 func TestNoRetryWithoutToolsAfterToolResults(t *testing.T) {
 	llm, cfg := withLLM(t, toolCall("call_1", "get_card", `{"id": 7}`), fakeReply{status: 400})
-	h := startPlugin(t, cfg, nil)
+	h := startPlugin(t, cfg)
 	if _, err := h.run(t, sampleRun(t, "revise")); err == nil {
 		t.Fatal("a rejected second round succeeded")
 	}
@@ -363,7 +363,7 @@ func TestNoRetryWithoutToolsAfterToolResults(t *testing.T) {
 
 func TestEndedRunStopsTheToolLoop(t *testing.T) {
 	llm, cfg := withLLM(t, toolCall("call_1", "get_card", `{"id": 7}`), streamed(`{"description": "x"}`))
-	h := startPlugin(t, cfg, nil)
+	h := startPlugin(t, cfg)
 	h.library = func(protocol.LibraryCallParams) (any, error) {
 		return nil, protocol.NewError(-32602, "run 1.1 has finished", false)
 	}
@@ -377,7 +377,7 @@ func TestEndedRunStopsTheToolLoop(t *testing.T) {
 
 func TestCancelStopsTheToolLoop(t *testing.T) {
 	llm, cfg := withLLM(t, toolCall("call_1", "get_card", `{"id": 7}`), streamed(`{"description": "x"}`))
-	h := startPlugin(t, cfg, nil)
+	h := startPlugin(t, cfg)
 	ctx, cancel := context.WithCancel(context.Background())
 	lib := func(context.Context, string, string) (string, error) {
 		cancel() // The owner pressed Stop while the tool ran.
@@ -397,7 +397,7 @@ func TestProgressRestartsEachRound(t *testing.T) {
 	_, cfg := withLLM(t,
 		fakeReply{deltas: []string{`{"description": "draft"`}, calls: []protocol.ToolCall{{ID: "call_1", Name: "get_card", Arguments: `{"id": 7}`}}},
 		streamed(`{"bogus": 1, "description": "Billy's brother."}`))
-	h := startPlugin(t, cfg, nil)
+	h := startPlugin(t, cfg)
 	h.library = func(protocol.LibraryCallParams) (any, error) { return protocol.MCPCallResult{}, nil }
 	if _, err := h.run(t, sampleRun(t, "revise")); err != nil {
 		t.Fatal(err)
@@ -418,7 +418,7 @@ func TestLoreEntriesRunProgressPerEntry(t *testing.T) {
 	out := `{"entries": [{"comment": "The pass", "keys": ["Iron Pass"], "content": "A narrow road."},
 		{"keys": ["Billy"], "content": "Brakka's brother."}, {"keys": ["Snow"], "content": "Always."}]}`
 	llm, cfg := withLLM(t, streamed(out))
-	h := startPlugin(t, cfg, nil)
+	h := startPlugin(t, cfg)
 	p := sampleRun(t, "lore-entries")
 	p.Inputs = json.RawMessage(`{"count": 2}`)
 	res, err := h.run(t, p)

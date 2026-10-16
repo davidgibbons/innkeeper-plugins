@@ -136,7 +136,7 @@ func TestRecordsImportUpload(t *testing.T) {
 }
 
 func TestRecordsWithoutDatabase(t *testing.T) {
-	h := startPlugin(t, map[string]any{}, nil)
+	h := startPlugin(t, map[string]any{})
 	err := h.call(protocol.MethodRecordsList, protocol.RecordsListParams{Type: "skill"}, nil)
 	var rpc *protocol.Error
 	if !errors.As(err, &rpc) || rpc.Code == -32601 || !strings.Contains(rpc.Message, "no database") {

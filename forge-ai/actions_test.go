@@ -134,6 +134,11 @@ func TestNullMeansUnchanged(t *testing.T) {
 	if m["description"] != "A very big, very tall orc who guards {{user}}." {
 		t.Fatalf("proposal %v", m)
 	}
+	p := sampleRun(t, "revise")
+	p.Field = "scenario"
+	if _, added := proposalOf(t, result(t, p, `{"scenario": null}`))["scenario"]; added {
+		t.Fatal("a null added scenario, which the card lacks")
+	}
 }
 
 func TestTagsAsCommaSeparatedText(t *testing.T) {
@@ -165,8 +170,9 @@ func TestTheTenActions(t *testing.T) {
 func TestReviseOnTagsTakesCommaText(t *testing.T) {
 	p := sampleRun(t, "revise")
 	p.Field = "tags"
+	p.Entity.Data = json.RawMessage(`{"name": "Brakka", "tags": ["orc", "guard"]}`)
 	system, user, _ := render(t, p, settings{})
-	if !strings.Contains(user, "orc") || !strings.Contains(system, `"tags"`) {
+	if !strings.Contains(user, "\norc, guard\n") || !strings.Contains(system, `"tags"`) {
 		t.Fatalf("tags field prompt:\n%s\n%s", system, user)
 	}
 }

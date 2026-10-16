@@ -55,7 +55,7 @@ var actions = []action{
 	{protocol.Action{ID: "change-pov", Label: "Change point of view", Description: "Switch between first and third person.",
 		Applies: protocol.ApplyCard, Fields: povFields, WholeCard: true,
 		Inputs: json.RawMessage(fmt.Sprintf(povSchema, `"first", "third"`, `, "required": ["point_of_view"]`))}, 0.6, 4096, nil},
-	{protocol.Action{ID: "examples", Label: "Write examples", Description: "Write new example dialogue.",
+	{protocol.Action{ID: "examples", Label: "Write examples", Description: "Replace the example dialogue with new exchanges.",
 		Applies: protocol.ApplyCard, Fields: []string{"mes_example"},
 		Inputs: json.RawMessage(`{"type": "object", "properties": {"count": {"type": "integer", "title": "Examples", "minimum": 1, "maximum": 10, "default": 3}}}`)}, 0.8, 4096, nil},
 	{protocol.Action{ID: "alternate-greetings", Label: "Write alternate greetings", Description: "Add new opening messages to the card.",
@@ -169,12 +169,10 @@ func (r *run) writes() []string {
 		return evaluationKeys
 	case len(r.Fields) > 0:
 		return []string{r.Field}
-	case r.ID == "generate" && r.pointOfView == "scenario":
+	case r.pointOfView == "scenario":
 		return append(slices.Clone(generatedKeys), "creator_notes")
-	case r.ID == "generate":
-		return generatedKeys
 	}
-	return cardKeys
+	return generatedKeys
 }
 
 // sent is the card as the model sees it: cardKeys, with absent ones empty.

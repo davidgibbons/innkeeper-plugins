@@ -36,7 +36,7 @@ func (h *host) enrich(t *testing.T, p protocol.EnrichRunParams) (protocol.Enrich
 
 func TestEnrichMapsEvaluationToDeclaredKeys(t *testing.T) {
 	_, cfg := withLLM(t, streamed(evaluated))
-	h := startPlugin(t, cfg, nil)
+	h := startPlugin(t, cfg)
 	res, err := h.enrich(t, enrichParams("Brakka"))
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +77,7 @@ func TestEnrichMapsEvaluationToDeclaredKeys(t *testing.T) {
 
 func TestEnrichFailedRevisionKeepsTheBatch(t *testing.T) {
 	llm, cfg := withLLM(t, fakeReply{status: 400}, streamed("I can't score this."), streamed(evaluated))
-	h := startPlugin(t, cfg, nil)
+	h := startPlugin(t, cfg)
 	res, err := h.enrich(t, enrichParams("Brakka", "Mira", "Ash"))
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +103,7 @@ func TestEnrichFailedRevisionKeepsTheBatch(t *testing.T) {
 }
 
 func TestEnrichWithoutSettingsFailsTheCall(t *testing.T) {
-	h := startPlugin(t, map[string]any{}, nil)
+	h := startPlugin(t, map[string]any{})
 	_, err := h.enrich(t, enrichParams("Brakka"))
 	var rpc *protocol.Error
 	if !errors.As(err, &rpc) || rpc.Code == -32601 || !strings.Contains(rpc.Message, "connection") {
@@ -115,7 +115,7 @@ func TestEnrichCancelStopsFurtherCalls(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	llm, cfg := withLLM(t, streamed(evaluated), streamed(evaluated))
 	llm.onRequest = cancel // The owner pressed Stop during the first call.
-	h := startPlugin(t, cfg, nil)
+	h := startPlugin(t, cfg)
 	params, _ := json.Marshal(enrichParams("Brakka", "Mira"))
 	if _, err := h.srv.enrich(ctx, h.srv.cur.Load(), params); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
@@ -153,7 +153,7 @@ func TestEnrichmentsMatchDimensions(t *testing.T) {
 func TestEnrichSkipsDimensionsWithoutAScore(t *testing.T) {
 	_, cfg := withLLM(t, streamed(`{"summary": "Thin.", "overall_score": 40, "dimensions": {
 "consistency": {"comment": "no score"}, "voice": {"score": null, "comment": "null"}, "roleplayability": {"score": 55}}}`))
-	h := startPlugin(t, cfg, nil)
+	h := startPlugin(t, cfg)
 	res, err := h.enrich(t, enrichParams("Brakka"))
 	if err != nil {
 		t.Fatal(err)
@@ -165,7 +165,7 @@ func TestEnrichSkipsDimensionsWithoutAScore(t *testing.T) {
 
 func TestEnrichReportWithoutScoresIsAnError(t *testing.T) {
 	_, cfg := withLLM(t, streamed(`{"summary": "x"}`))
-	h := startPlugin(t, cfg, nil)
+	h := startPlugin(t, cfg)
 	res, err := h.enrich(t, enrichParams("Brakka"))
 	if err != nil {
 		t.Fatal(err)
@@ -191,7 +191,7 @@ func TestEnrichPromptVersionFollowsTheSetup(t *testing.T) {
 		t.Helper()
 		_, cfg := withLLM(t, streamed(evaluated))
 		change(cfg)
-		res, err := startPlugin(t, cfg, nil).enrich(t, enrichParams("Brakka"))
+		res, err := startPlugin(t, cfg).enrich(t, enrichParams("Brakka"))
 		if err != nil {
 			t.Fatal(err)
 		}
