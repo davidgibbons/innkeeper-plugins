@@ -162,7 +162,7 @@ func withLLM(t *testing.T, replies ...fakeReply) (*fakeLLM, map[string]any) {
 	id := llmIDs.Add(1)
 	llms.Store(id, f)
 	t.Cleanup(func() { llms.Delete(id) })
-	return f, map[string]any{"connection": id, "house_style": "No em dashes."}
+	return f, map[string]any{"connection": id, "prompts": map[string]any{"house_style": "No em dashes."}}
 }
 
 const generated = `<think>An orc courier, I think.</think>{"name": "Ash", "description": "A courier.", "personality": "Wry.",
@@ -292,6 +292,17 @@ func TestRunWithoutSettingsFails(t *testing.T) {
 	var rpc *protocol.Error
 	if !errors.As(err, &rpc) || rpc.Code == -32601 || !strings.Contains(rpc.Message, "connection") {
 		t.Fatalf("err = %v, want a settings error", err)
+	}
+}
+
+func TestSettingsDefaultsWithEmptyConfig(t *testing.T) {
+	h := startPlugin(t, map[string]any{})
+	var res protocol.SettingsDefaultsResult
+	if err := h.conn.Call(context.Background(), protocol.MethodSettingsDefaults, nil, &res); err != nil {
+		t.Fatal(err)
+	}
+	if text, _ := res.Defaults["/prompts/tighten"].(string); !strings.Contains(text, "Tighten it") {
+		t.Fatalf("defaults %v", res.Defaults)
 	}
 }
 

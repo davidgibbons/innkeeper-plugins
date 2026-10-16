@@ -105,13 +105,13 @@ func TestPromptsCarryRunInputs(t *testing.T) {
 	}
 	p := sampleRun(t, "examples")
 	p.Inputs = json.RawMessage(`{"count": 5}`)
-	if system, _, _ := render(t, p, settings{}); !strings.Contains(system, "Write 5 example") {
-		t.Errorf("examples: count missing from %q", system)
+	if _, user, _ := render(t, p, settings{}); !strings.Contains(user, "Write 5 new example") {
+		t.Errorf("examples: count missing from %q", user)
 	}
 	p = sampleRun(t, "alternate-greetings")
 	p.Entity.Data = json.RawMessage(`{"name": "Brakka", "alternate_greetings": ["*The gate creaks.*"]}`)
 	p.Inputs = json.RawMessage(`{"count": 4}`)
-	if system, user, _ := render(t, p, settings{}); !strings.Contains(system, "Write 4 new greetings") || !strings.Contains(user, "The gate creaks.") {
+	if system, user, _ := render(t, p, settings{}); !strings.Contains(user, "Write 4 new alternate greetings") || !strings.Contains(user, "The gate creaks.") {
 		t.Errorf("alternate-greetings: count or existing greetings missing:\n%s\n%s", system, user)
 	}
 	p = sampleRun(t, "lore-entries")
@@ -128,24 +128,103 @@ func TestPromptsCarryRunInputs(t *testing.T) {
 	for pov, want := range map[string]string{"first": "first person", "third": "third person", "scenario": "scenario card"} {
 		p := sampleRun(t, "generate")
 		p.Inputs = json.RawMessage(`{"point_of_view": "` + pov + `"}`)
-		if system, _, _ := render(t, p, settings{}); !strings.Contains(system, want) {
+		if system, user, _ := render(t, p, settings{}); !strings.Contains(system+user, want) {
 			t.Errorf("generate %s: system prompt lacks %q", pov, want)
 		}
 	}
 }
 
-func TestHouseStyleAndAdditionInSystemPrompt(t *testing.T) {
-	s := settings{HouseStyle: "Use British spelling.", Additions: map[string]string{"evaluate": "Be harsh about clichés."}}
+func TestHouseStyleAndOverrideInSystemPrompt(t *testing.T) {
+	s := settings{Prompts: map[string]string{"house_style": "Use British spelling.", "evaluate": "Be harsh about clichés."}}
 	for _, a := range actions {
-		system, user, _ := render(t, sampleRun(t, a.ID), s)
+		system, user, keys := render(t, sampleRun(t, a.ID), s)
 		if !strings.Contains(system, "Use British spelling.") {
 			t.Errorf("%s: no house style", a.ID)
 		}
 		if got := strings.Contains(system, "Be harsh about clichés."); got != (a.ID == "evaluate") {
-			t.Errorf("%s: addition in system prompt = %v", a.ID, got)
+			t.Errorf("%s: override in system prompt = %v", a.ID, got)
 		}
 		if strings.Contains(user, "British") {
 			t.Errorf("%s: house style leaked into the user prompt", a.ID)
+		}
+		for _, k := range keys {
+			if !strings.Contains(system, `"`+k+`"`) {
+				t.Errorf("%s: an override lost the JSON contract's key %q", a.ID, k)
+			}
+		}
+	}
+	system, _, _ := render(t, sampleRun(t, "evaluate"), s)
+	if strings.Contains(system, "Determine Card Type") || !strings.Contains(system, `"overall_score"`) {
+		t.Errorf("evaluate override kept the default or lost the contract:\n%s", system)
+	}
+}
+
+func TestEmptyOverrideMeansNoInstructions(t *testing.T) {
+	for _, k := range promptKeys {
+		var p protocol.ActionRunParams
+		if pov, ok := strings.CutPrefix(k, "generate-"); ok {
+			p = sampleRun(t, "generate")
+			p.Inputs = json.RawMessage(`{"point_of_view": "` + pov + `"}`)
+		} else {
+			p = sampleRun(t, k)
+		}
+		def, err := execute(k+".instructions", promptData{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		system, _, keys := render(t, p, settings{Prompts: map[string]string{k: ""}})
+		if strings.Contains(system, def) {
+			t.Errorf("%s: an empty override kept the default instructions", k)
+		}
+		for _, key := range keys {
+			if !strings.Contains(system, `"`+key+`"`) {
+				t.Errorf("%s: an empty override lost the JSON contract's key %q", k, key)
+			}
+		}
+	}
+}
+
+func TestDefaultInstructionsTakeNoData(t *testing.T) {
+	full := promptData{Card: "{}", Field: "description", FieldText: "x", Instruction: "y", PointOfView: "first", Count: 7, Image: true}
+	for _, k := range promptKeys {
+		empty, err := execute(k+".instructions", promptData{})
+		if err != nil {
+			t.Fatalf("%s: %v", k, err)
+		}
+		filled, err := execute(k+".instructions", full)
+		if err != nil || filled != empty || strings.TrimSpace(empty) == "" {
+			t.Errorf("%s: instructions depend on the run or are empty:\n%s", k, empty)
+		}
+	}
+}
+
+func TestEveryRunHasInstructions(t *testing.T) {
+	for _, a := range actions {
+		in, err := parseRun(sampleRun(t, a.ID))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Contains(promptKeys, in.instructionsKey()) {
+			t.Errorf("%s: instructions key %q isn't in promptKeys", a.ID, in.instructionsKey())
+		}
+	}
+}
+
+func TestSettingsDefaultsAreTheInstructions(t *testing.T) {
+	res, err := settingsDefaults()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Defaults) != len(promptKeys) {
+		t.Fatalf("%d defaults, want %d", len(res.Defaults), len(promptKeys))
+	}
+	for _, k := range promptKeys {
+		want, err := execute(k+".instructions", promptData{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Defaults["/prompts/"+k] != want {
+			t.Errorf("%s default %q, want %q", k, res.Defaults["/prompts/"+k], want)
 		}
 	}
 }
@@ -167,25 +246,26 @@ func TestContextInUserPrompt(t *testing.T) {
 	}
 }
 
-func TestAdditionsMatchActions(t *testing.T) {
+func TestPromptSettingsMatchKeys(t *testing.T) {
 	var m struct {
-		Config struct {
+		Capabilities []string `toml:"capabilities"`
+		Config       struct {
 			Properties struct {
-				Additions struct {
+				Prompts struct {
 					Properties map[string]any `toml:"properties"`
-				} `toml:"additions"`
+				} `toml:"prompts"`
 			} `toml:"properties"`
 		} `toml:"config"`
 	}
 	if _, err := toml.DecodeFile("plugin.toml", &m); err != nil {
 		t.Fatal(err)
 	}
-	var ids []string
-	for _, a := range actions {
-		ids = append(ids, a.ID)
+	if !slices.Contains(m.Capabilities, "settings") {
+		t.Errorf("capabilities %v lack settings, so the core never asks for the defaults", m.Capabilities)
 	}
-	slices.Sort(ids)
-	if got := slices.Sorted(maps.Keys(m.Config.Properties.Additions.Properties)); !slices.Equal(got, ids) {
-		t.Fatalf("additions properties %v, want the action IDs %v", got, ids)
+	want := append([]string{"house_style"}, promptKeys...)
+	slices.Sort(want)
+	if got := slices.Sorted(maps.Keys(m.Config.Properties.Prompts.Properties)); !slices.Equal(got, want) {
+		t.Fatalf("prompts properties %v, want %v", got, want)
 	}
 }

@@ -27,10 +27,50 @@ type promptData struct {
 	Count       int
 	Image       bool
 	Context     protocol.ActionContext
+	// Instructions are the action's rules: the owner's override or the default.
+	Instructions string
+	// Keys are the keys generate writes, quoted, for its JSON contract.
+	Keys string
+}
+
+// promptKeys are the instructions blocks, in the Prompts tab's order. Each is
+// a setting under prompts and a template named <key>.instructions.
+var promptKeys = []string{"generate-first", "generate-third", "generate-scenario", "revise", "tighten", "expand",
+	"to-prose", "change-pov", "examples", "alternate-greetings", "lore-entries", "evaluate"}
+
+// instructionsKey names the run's instructions block.
+func (r *run) instructionsKey() string {
+	if r.ID == "generate" {
+		return "generate-" + r.pointOfView
+	}
+	return r.ID
+}
+
+// instructions are key's override, or else its default block. The core
+// saves no key for a field left at its default, so an empty override is
+// the owner asking for no instructions.
+func instructions(s settings, key string) (string, error) {
+	if o, ok := s.Prompts[key]; ok {
+		return strings.TrimSpace(o), nil
+	}
+	return execute(key+".instructions", promptData{})
+}
+
+// settingsDefaults is each instructions block, by its setting's pointer.
+func settingsDefaults() (protocol.SettingsDefaultsResult, error) {
+	out := protocol.SettingsDefaultsResult{Defaults: map[string]any{}}
+	for _, k := range promptKeys {
+		text, err := execute(k+".instructions", promptData{})
+		if err != nil {
+			return out, err
+		}
+		out.Defaults["/prompts/"+k] = text
+	}
+	return out, nil
 }
 
 // prompts renders the run's system and user prompts. The system prompt ends
-// with the owner's house style and this action's addition.
+// with the owner's house style.
 func (r *run) prompts(s settings) (system, user string, err error) {
 	d := promptData{Field: r.Field, Instruction: r.Instruction, PointOfView: r.pointOfView, Count: r.count,
 		Image: r.Images.Reference != "" || r.Images.Avatar != "", Context: r.Context}
@@ -69,17 +109,18 @@ func (r *run) prompts(s settings) (system, user string, err error) {
 			}
 		}
 	}
+	if d.Instructions, err = instructions(s, r.instructionsKey()); err != nil {
+		return "", "", err
+	}
+	d.Keys = `"` + strings.Join(r.writes(), `", "`) + `"`
 	if system, err = execute(r.ID+".system", d); err != nil {
 		return "", "", err
 	}
 	if user, err = execute(r.ID+".user", d); err != nil {
 		return "", "", err
 	}
-	if s.HouseStyle != "" {
-		system += "\n\n## House style\n\n" + s.HouseStyle
-	}
-	if a := s.Additions[r.ID]; a != "" {
-		system += "\n\n## For this action\n\n" + a
+	if hs := strings.TrimSpace(s.Prompts["house_style"]); hs != "" {
+		system += "\n\n## House style\n\n" + hs
 	}
 	return system, user, nil
 }

@@ -1,6 +1,4 @@
-[[- define "evaluate.system" -]]
-You are an expert roleplay character card evaluator. Analyze the provided card and return a JSON evaluation.
-
+[[- define "evaluate.instructions" -]]
 ## Step 1: Determine Card Type
 
 Signals:
@@ -33,6 +31,12 @@ Apply type-specific rules below. Do not apply character card rules to scenario c
 **misplaced_content**: Content clearly in the wrong field — apply card-type rules, don't flag correct scenario card structure
 
 **suggestions**: Ordered by impact (most important first). Be specific and actionable. Max 5.
+[[- end]]
+
+[[- define "evaluate.system" -]]
+You are an expert roleplay character card evaluator. Analyze the provided card and return a JSON evaluation.
+
+[[.Instructions]]
 
 ## Output
 

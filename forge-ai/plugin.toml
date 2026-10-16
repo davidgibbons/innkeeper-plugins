@@ -2,7 +2,7 @@ name = "forge-ai"
 version = "0.4.0"
 protocol = 1
 command = ["./forge-ai"]
-capabilities = ["action", "records", "enrich"]
+capabilities = ["action", "records", "enrich", "settings"]
 uses = ["ai.chat"]
 database = true
 
@@ -27,27 +27,25 @@ type = "integer"
 title = "Max tokens"
 description = "Leave empty to use each action's own: 8192 for Forge, alternate greetings, and lore entries, 4096 for the rest."
 
-[config.properties.house_style]
-type = "string"
-title = "House style"
-description = "Added to every action's system prompt, such as \"British spelling; no em dashes\"."
-
-[config.properties.additions]
+[config.properties.prompts]
 type = "object"
-title = "Additions"
-description = "Added to one action's system prompt."
+title = "Prompts"
+description = "Each action's instructions. Leave one unchanged to follow the plugin's default as it improves; reset brings it back."
 
-[config.properties.additions.properties]
-generate = { type = "string", title = "Forge" }
-revise = { type = "string", title = "Revise" }
-evaluate = { type = "string", title = "Evaluate" }
-change-pov = { type = "string", title = "Change point of view" }
-tighten = { type = "string", title = "Tighten" }
-expand = { type = "string", title = "Expand" }
-to-prose = { type = "string", title = "Convert to prose" }
-examples = { type = "string", title = "Write examples" }
-alternate-greetings = { type = "string", title = "Write alternate greetings" }
-lore-entries = { type = "string", title = "Write lore entries" }
+[config.properties.prompts.properties]
+house_style = { type = "string", title = "House style", contentMediaType = "text/plain", description = "Added to every action's system prompt, such as \"British spelling; no em dashes\"." }
+generate-first = { type = "string", title = "Forge, first person", contentMediaType = "text/plain" }
+generate-third = { type = "string", title = "Forge, third person", contentMediaType = "text/plain" }
+generate-scenario = { type = "string", title = "Forge, scenario card", contentMediaType = "text/plain" }
+revise = { type = "string", title = "Revise", contentMediaType = "text/plain" }
+tighten = { type = "string", title = "Tighten", contentMediaType = "text/plain" }
+expand = { type = "string", title = "Expand", contentMediaType = "text/plain" }
+to-prose = { type = "string", title = "Convert to prose", contentMediaType = "text/plain" }
+change-pov = { type = "string", title = "Change point of view", contentMediaType = "text/plain" }
+examples = { type = "string", title = "Write examples", contentMediaType = "text/plain" }
+alternate-greetings = { type = "string", title = "Write alternate greetings", contentMediaType = "text/plain" }
+lore-entries = { type = "string", title = "Write lore entries", contentMediaType = "text/plain" }
+evaluate = { type = "string", title = "Evaluate", contentMediaType = "text/plain" }
 
 [enrichments]
 quality = { type = "score", range = [0, 100], label = "Quality", grid = true }

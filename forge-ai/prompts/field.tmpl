@@ -16,38 +16,34 @@ The whole card, for context:
 [[- template "context" .]]
 [[- end]]
 
-[[- define "tighten.system" -]]
+[[- define "field.system" -]]
 [[template "field-rules" .]]
 
-Tighten it: cut filler, repetition, and words that don't change how {{char}} behaves. Keep every concrete fact, name, rule, and voice marker. Aim for about two thirds of the length. Don't add anything.
+[[.Instructions]]
 
 Return only the JSON object: no code fence, no commentary.
 [[- end]]
+
+[[- define "tighten.instructions" -]]
+Tighten it: cut filler, repetition, and words that don't change how {{char}} behaves. Keep every concrete fact, name, rule, and voice marker. Aim for about two thirds of the length. Don't add anything.
+[[- end]]
+[[- define "tighten.system" -]][[template "field.system" .]][[end]]
 [[- define "tighten.user" -]][[template "field.user" .]][[end]]
 
-[[- define "expand.system" -]]
-[[template "field-rules" .]]
-
+[[- define "expand.instructions" -]]
 Expand it: add concrete, specific detail that fits the rest of the card and changes how {{char}} behaves or how a scene plays. No filler, no generic adjectives, no new facts that contradict the card. Aim for about half again the length.
-
-Return only the JSON object: no code fence, no commentary.
 [[- end]]
+[[- define "expand.system" -]][[template "field.system" .]][[end]]
 [[- define "expand.user" -]][[template "field.user" .]][[end]]
 
-[[- define "to-prose.system" -]]
-[[template "field-rules" .]]
-
+[[- define "to-prose.instructions" -]]
 Convert it to prose: turn lists, bullet points, W++ or other bracket formats, and key: value lines into well-written paragraphs. Keep every fact. Don't add any.
-
-Return only the JSON object: no code fence, no commentary.
 [[- end]]
+[[- define "to-prose.system" -]][[template "field.system" .]][[end]]
 [[- define "to-prose.user" -]][[template "field.user" .]][[end]]
 
-[[- define "revise.system" -]]
-[[template "field-rules" .]]
-
+[[- define "revise.instructions" -]]
 Change it as the owner's instruction asks. Change only what the instruction asks for, and keep the rest of the field's content, voice, and formatting.
-
-Return only the JSON object: no code fence, no commentary.
 [[- end]]
+[[- define "revise.system" -]][[template "field.system" .]][[end]]
 [[- define "revise.user" -]][[template "field.user" .]][[end]]

@@ -9,11 +9,12 @@ import (
 // settings are the instance's config.
 type settings struct {
 	// Connection is the ai instance every model call goes to.
-	Connection  int64             `json:"connection"`
-	Temperature *float64          `json:"temperature"`
-	MaxTokens   *int              `json:"max_tokens"`
-	HouseStyle  string            `json:"house_style"`
-	Additions   map[string]string `json:"additions"`
+	Connection  int64    `json:"connection"`
+	Temperature *float64 `json:"temperature"`
+	MaxTokens   *int     `json:"max_tokens"`
+	// Prompts are the owner's overrides by instructions key, and house_style.
+	// A key present with empty text is an override: no instructions.
+	Prompts map[string]string `json:"prompts"`
 }
 
 func parseSettings(cfg map[string]any) (settings, error) {

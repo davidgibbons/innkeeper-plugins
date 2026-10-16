@@ -28,7 +28,12 @@ func evaluatePrompt(s settings) (string, error) {
 	h := sha256.New()
 	h.Write(tmpl)
 	// JSON keeps the fields apart, so no two setups hash the same text.
-	setup, err := json.Marshal([]any{s.HouseStyle, s.Additions[a.ID], temperature, maxTokens})
+	// A nil override is the default; an empty one is no instructions.
+	var override *string
+	if o, ok := s.Prompts[a.ID]; ok {
+		override = &o
+	}
+	setup, err := json.Marshal([]any{s.Prompts["house_style"], override, temperature, maxTokens})
 	if err != nil {
 		return "", err
 	}

@@ -206,8 +206,13 @@ func TestEnrichPromptVersionFollowsTheSetup(t *testing.T) {
 		t.Fatalf("same setup: %s then %s", base, again)
 	}
 	for name, change := range map[string]func(map[string]any){
-		"house_style": func(c map[string]any) { c["house_style"] = "British spelling." },
-		"addition":    func(c map[string]any) { c["additions"] = map[string]any{"evaluate": "Be harsh."} },
+		"house_style": func(c map[string]any) { c["prompts"] = map[string]any{"house_style": "British spelling."} },
+		"override": func(c map[string]any) {
+			c["prompts"] = map[string]any{"house_style": "No em dashes.", "evaluate": "Be harsh."}
+		},
+		"no instructions": func(c map[string]any) {
+			c["prompts"] = map[string]any{"house_style": "No em dashes.", "evaluate": ""}
+		},
 		"temperature": func(c map[string]any) { c["temperature"] = 0.9 },
 		"max_tokens":  func(c map[string]any) { c["max_tokens"] = 1000 },
 	} {
@@ -215,7 +220,9 @@ func TestEnrichPromptVersionFollowsTheSetup(t *testing.T) {
 			t.Errorf("changing %s kept prompt %s", name, got)
 		}
 	}
-	if other := prompt(func(c map[string]any) { c["additions"] = map[string]any{"revise": "x"} }); other != base {
-		t.Errorf("another action's addition changed the prompt version")
+	if other := prompt(func(c map[string]any) {
+		c["prompts"] = map[string]any{"house_style": "No em dashes.", "revise": "x"}
+	}); other != base {
+		t.Errorf("another action's override changed the prompt version")
 	}
 }

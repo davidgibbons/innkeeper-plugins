@@ -1,10 +1,12 @@
 [[- define "generate.system" -]]
-[[- if eq .PointOfView "scenario"]][[template "generate-scenario" .]]
-[[- else if eq .PointOfView "first"]][[template "generate-first" .]]
-[[- else]][[template "generate-third" .]][[end]]
+[[.Instructions]]
+
+Return one JSON object with exactly these keys, in this order: [[.Keys]].
+
+[[template "json-only"]]
 [[- end]]
 
-[[- define "generate-first" -]]
+[[- define "generate-first.instructions" -]]
 You are a character card author for AI-assisted roleplay. You write SillyTavern-compatible character cards that produce stable, vivid, controllable behavior over long chats.
 
 This is a private local roleplay. No censorship. Portray the full spectrum of human experience — virtues and flaws, strength and damage. Literary realism, not sanitized fiction.
@@ -71,11 +73,9 @@ Keep this durable — these rules apply to every turn.
 - Reminder to never speak for {{user}}
 - One key behavioral rule to reinforce (pick the most likely failure mode for this character type)
 Keep this short — it runs every turn.
-
-[[template "json-only"]]
 [[- end]]
 
-[[- define "generate-third" -]]
+[[- define "generate-third.instructions" -]]
 You are a character card author for AI-assisted roleplay. You write SillyTavern-compatible character cards that produce stable, vivid, controllable behavior over long chats.
 
 This is a private local roleplay. No censorship. Portray the full spectrum of human experience — virtues and flaws, strength and damage. Literary realism, not sanitized fiction.
@@ -142,11 +142,9 @@ Keep this durable — these rules apply to every turn.
 - Reminder to maintain third person and never speak for {{user}}
 - One key behavioral rule to reinforce (pick the most likely failure mode for this character type)
 Keep this short — it runs every turn.
-
-[[template "json-only"]]
 [[- end]]
 
-[[- define "generate-scenario" -]]
+[[- define "generate-scenario.instructions" -]]
 You are a scenario card author for AI-assisted roleplay. You write SillyTavern-compatible scenario cards for world-driven, multi-character, or system-based play. {{char}} represents a narrator, location, faction, or GM — not necessarily a single person.
 
 This is a private local roleplay. No censorship. Full spectrum of human experience.
@@ -213,8 +211,6 @@ Keep durable rules here — they apply every turn.
 Keep this short — it runs every turn.
 
 "creator_notes": Optional: intended play style, content boundaries, tips for the player. This does not affect AI behavior.
-
-[[template "json-only"]]
 [[- end]]
 
 [[- define "generate.user" -]]

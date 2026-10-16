@@ -1,3 +1,7 @@
+[[- define "change-pov.instructions" -]]
+Change only the point of view. Keep every fact, name, rule, detail, and the tone, and keep the formatting.
+[[- end]]
+
 [[- define "change-pov.system" -]]
 [[template "field-rules" .]]
 
@@ -7,7 +11,7 @@ Rewrite it in first person, in {{char}}'s own voice: I, me, my. In system_prompt
 Rewrite it in third person: he, she, they, or {{char}}; never I, me, or my outside quoted dialogue. In first_mes and mes_example, narrate {{char}} as an omniscient narrator; dialogue stays in {{char}}'s voice. In system_prompt and post_history_instructions, enforce third-person narration.
 [[- end]]
 
-Change only the point of view. Keep every fact, name, rule, detail, and the tone, and keep the formatting.
+[[.Instructions]]
 
 Return only the JSON object: no code fence, no commentary.
 [[- end]]

@@ -60,7 +60,7 @@ func (srv *server) handle(ctx context.Context, method string, params json.RawMes
 		in.settings, in.err = parseSettings(p.Config)
 		srv.cur.Store(in)
 		return protocol.InitializeResult{Protocol: protocol.Version, Name: "forge-ai", Version: version,
-			Capabilities: []string{"action", "records", "enrich"}}, nil
+			Capabilities: []string{"action", "records", "enrich", "settings"}}, nil
 	case protocol.NotifyAIDelta:
 		var d protocol.AIDelta
 		if json.Unmarshal(params, &d) == nil {
@@ -69,6 +69,8 @@ func (srv *server) handle(ctx context.Context, method string, params json.RawMes
 			}
 		}
 		return nil, nil
+	case protocol.MethodSettingsDefaults:
+		return settingsDefaults()
 	case protocol.MethodShutdown:
 		if in := srv.cur.Load(); in != nil && in.store != nil {
 			in.store.close()
