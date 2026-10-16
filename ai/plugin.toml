@@ -1,0 +1,37 @@
+name = "ai"
+version = "0.1.0"
+protocol = 1
+command = ["./ai"]
+capabilities = ["ai", "settings"]
+secrets = ["api_key"]
+
+[settings.actions]
+test = { label = "Test connection" }
+
+[config]
+type = "object"
+required = ["provider", "model"]
+
+[config.properties.provider]
+type = "string"
+title = "Provider"
+enum = ["openai-compatible", "openai", "anthropic", "gemini", "mistral", "groq", "deepseek", "ollama", "llamacpp", "llamafile"]
+description = "openai-compatible covers vLLM, llama.cpp servers, LM Studio, and OpenRouter. The API key is optional for it and for ollama, llamacpp, and llamafile."
+
+[config.properties.base_url]
+type = "string"
+title = "Base URL"
+description = "The API's URL, such as http://localhost:1234/v1. Required for openai-compatible; for other providers it overrides the default."
+
+[config.properties.model]
+type = "string"
+title = "Model"
+x-options = true
+description = "Load choices lists the provider's models. Anthropic doesn't list them, so type the name."
+
+[config.properties.kinds]
+type = "array"
+title = "Provides"
+description = "What this connection is for. Test connection checks each one."
+default = ["chat"]
+items = { type = "string", enum = ["chat", "embed"] }

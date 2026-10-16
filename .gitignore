@@ -14,3 +14,4 @@
 # The contract check's image store.
 /chub-archive/testdata/store/*
 !/chub-archive/testdata/store/.gitkeep
+/ai/ai

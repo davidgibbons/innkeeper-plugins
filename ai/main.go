@@ -1,0 +1,104 @@
+// Command ai offers model services to other plugins, ai.chat and ai.embed,
+// through any-llm-go. One instance is one connection to a model.
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"slices"
+	"sync/atomic"
+
+	"github.com/davidgibbons/innkeeper/protocol"
+	anyllm "github.com/mozilla-ai/any-llm-go"
+)
+
+const version = "0.1.0"
+
+// connection is what initialize configured. llm is nil for the empty config
+// the core's settings process starts with.
+type connection struct {
+	settings settings
+	llm      anyllm.Provider
+}
+
+type server struct {
+	conn *protocol.Conn
+	// Set by initialize; requests run on other goroutines.
+	cur atomic.Pointer[connection]
+}
+
+func main() {
+	srv := &server{}
+	srv.conn = protocol.NewConn(os.Stdin, os.Stdout, srv.handle)
+	if err := srv.conn.Run(context.Background()); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func (srv *server) handle(ctx context.Context, method string, params json.RawMessage) (any, error) {
+	switch method {
+	case protocol.MethodInitialize:
+		var p protocol.InitializeParams
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, invalid("%v", err)
+		}
+		c, err := connect(p.Config, p.Secrets["api_key"])
+		if err != nil {
+			return nil, err
+		}
+		srv.cur.Store(c)
+		return protocol.InitializeResult{Protocol: protocol.Version, Name: "ai", Version: version,
+			Capabilities: []string{"ai", "settings"}, Services: c.services()}, nil
+	case protocol.MethodShutdown:
+		return nil, nil
+	}
+	return nil, protocol.MethodNotFound(method)
+}
+
+// connect builds the connection a config describes. An empty config gives
+// a connection that offers nothing.
+func connect(cfg map[string]any, apiKey string) (*connection, error) {
+	if len(cfg) == 0 {
+		return &connection{}, nil
+	}
+	s, err := parseSettings(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if s.Model == "" {
+		return nil, errors.New("settings: model is required")
+	}
+	llm, err := s.provider(apiKey)
+	if err != nil {
+		return nil, err
+	}
+	if slices.Contains(s.Kinds, "embed") && !embeds(llm) {
+		return nil, fmt.Errorf("settings: %s doesn't offer embeddings", s.Provider)
+	}
+	return &connection{settings: s, llm: llm}, nil
+}
+
+// services are what the connection offers; none before it's configured.
+func (c *connection) services() []string {
+	if c.llm == nil {
+		return nil
+	}
+	return c.settings.services()
+}
+
+// offering returns the connection when it offers method.
+func (srv *server) offering(method string) (*connection, error) {
+	c := srv.cur.Load()
+	if c == nil || !slices.Contains(c.services(), method) {
+		return nil, protocol.MethodNotFound(method)
+	}
+	return c, nil
+}
+
+func invalid(format string, args ...any) error {
+	return protocol.NewError(protocol.CodeInvalidParams, fmt.Sprintf(format, args...), false)
+}
