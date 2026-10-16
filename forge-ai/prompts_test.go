@@ -161,18 +161,26 @@ func TestHouseStyleAndOverrideInSystemPrompt(t *testing.T) {
 
 func TestEmptyOverrideMeansNoInstructions(t *testing.T) {
 	for _, k := range promptKeys {
-		var p protocol.ActionRunParams
-		if pov, ok := strings.CutPrefix(k, "generate-"); ok {
-			p = sampleRun(t, "generate")
-			p.Inputs = json.RawMessage(`{"point_of_view": "` + pov + `"}`)
-		} else {
-			p = sampleRun(t, k)
-		}
 		def, err := execute(k+".instructions", promptData{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		system, _, keys := render(t, p, settings{Prompts: map[string]string{k: ""}})
+		s := settings{Prompts: map[string]string{k: ""}}
+		var system string
+		var keys []string
+		if pov, ok := strings.CutPrefix(k, "generate-"); ok {
+			p := sampleRun(t, "generate")
+			p.Inputs = json.RawMessage(`{"point_of_view": "` + pov + `"}`)
+			system, _, keys = render(t, p, s)
+		} else if k == "whole-card" {
+			r := wholeCardRun(t, "tighten")
+			if system, _, err = r.planPrompts(s); err != nil {
+				t.Fatal(err)
+			}
+			keys = r.Fields
+		} else {
+			system, _, keys = render(t, sampleRun(t, k), s)
+		}
 		if strings.Contains(system, def) {
 			t.Errorf("%s: an empty override kept the default instructions", k)
 		}

@@ -1,0 +1,29 @@
+[[- define "whole-card.instructions" -]]
+Plan an edit of the whole card, field by field. Each field is then edited on its own by someone who sees only your note for it and the rest of the card.
+
+- Give a field a note only when the edit should change it; otherwise answer "skip".
+- Make the notes work together: each fact lives in the field that owns it, so a note can say to cut a fact another field already holds.
+- Keep the card's voice, point of view, and tone consistent across the notes, unless the edit is to change them.
+- Be specific: name what to cut, add, or move.
+[[- end]]
+
+[[- define "plan.system" -]]
+[[.Instructions]]
+
+[[template "field-ownership"]]
+
+## The edit: [[.Action]][[if .PointOfView]], to [[.PointOfView]] person[[end]]
+
+[[.ActionInstructions]]
+
+Return one JSON object whose keys are the fields to plan, [[.Keys]], each with a note of one to three sentences or "skip". Return only the JSON object: no code fence, no commentary.
+[[- end]]
+
+[[- define "plan.user" -]]
+[[- if .Instruction]]The owner's direction: [[.Instruction]]
+
+[[end -]]
+The card:
+[[.Card]]
+[[- template "context" .]]
+[[- end]]

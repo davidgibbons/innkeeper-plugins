@@ -98,6 +98,8 @@ type run struct {
 	count       int
 	// model is the model that answered, from the ai instance's reply.
 	model string
+	// note is the plan's note for this field, in a whole-card run.
+	note string
 }
 
 func invalid(format string, args ...any) error {
@@ -111,7 +113,7 @@ func parseRun(p protocol.ActionRunParams) (*run, error) {
 		return nil, invalid("unknown action %q", p.Action)
 	}
 	r := &run{action: a, ActionRunParams: p}
-	if len(a.Fields) > 0 && !slices.Contains(a.Fields, p.Field) {
+	if len(a.Fields) > 0 && !slices.Contains(a.Fields, p.Field) && (p.Field != "" || !a.WholeCard) {
 		return nil, invalid("action %s doesn't run on field %q", a.ID, p.Field)
 	}
 	if a.Instruction && strings.TrimSpace(p.Instruction) == "" {

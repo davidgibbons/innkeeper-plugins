@@ -34,6 +34,7 @@ description = "Each action's instructions. Leave one unchanged to follow the plu
 
 [config.properties.prompts.properties]
 house_style = { type = "string", title = "House style", contentMediaType = "text/plain", description = "Added to every action's system prompt, such as \"British spelling; no em dashes\"." }
+whole-card = { type = "string", title = "Whole card guidance", contentMediaType = "text/plain", description = "How a whole-card edit plans each field before editing it." }
 generate-first = { type = "string", title = "Forge, first person", contentMediaType = "text/plain" }
 generate-third = { type = "string", title = "Forge, third person", contentMediaType = "text/plain" }
 generate-scenario = { type = "string", title = "Forge, scenario card", contentMediaType = "text/plain" }

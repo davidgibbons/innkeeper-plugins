@@ -29,13 +29,18 @@ type promptData struct {
 	Context     protocol.ActionContext
 	// Instructions are the action's rules: the owner's override or the default.
 	Instructions string
-	// Keys are the keys generate writes, quoted, for its JSON contract.
+	// Keys are the keys the model returns, quoted, for its JSON contract.
 	Keys string
+	// Note is the plan's note for the field, in a whole-card run.
+	Note string
+	// Action and ActionInstructions describe the edit a whole-card plan is for.
+	Action             string
+	ActionInstructions string
 }
 
 // promptKeys are the instructions blocks, in the Prompts tab's order. Each is
 // a setting under prompts and a template named <key>.instructions.
-var promptKeys = []string{"generate-first", "generate-third", "generate-scenario", "revise", "tighten", "expand",
+var promptKeys = []string{"whole-card", "generate-first", "generate-third", "generate-scenario", "revise", "tighten", "expand",
 	"to-prose", "change-pov", "examples", "alternate-greetings", "lore-entries", "evaluate"}
 
 // instructionsKey names the run's instructions block.
@@ -73,7 +78,7 @@ func settingsDefaults() (protocol.SettingsDefaultsResult, error) {
 // with the owner's house style.
 func (r *run) prompts(s settings) (system, user string, err error) {
 	d := promptData{Field: r.Field, Instruction: r.Instruction, PointOfView: r.pointOfView, Count: r.count,
-		Image: r.Images.Reference != "" || r.Images.Avatar != "", Context: r.Context}
+		Image: r.Images.Reference != "" || r.Images.Avatar != "", Context: r.Context, Note: r.note}
 	switch {
 	case r.Applies == protocol.ApplyLorebook:
 		book, err := r.sentLorebook()
@@ -112,7 +117,7 @@ func (r *run) prompts(s settings) (system, user string, err error) {
 	if d.Instructions, err = instructions(s, r.instructionsKey()); err != nil {
 		return "", "", err
 	}
-	d.Keys = `"` + strings.Join(r.writes(), `", "`) + `"`
+	d.Keys = quoted(r.writes())
 	if system, err = execute(r.ID+".system", d); err != nil {
 		return "", "", err
 	}
@@ -123,6 +128,39 @@ func (r *run) prompts(s settings) (system, user string, err error) {
 		system += "\n\n## House style\n\n" + hs
 	}
 	return system, user, nil
+}
+
+// planPrompts renders the prompts for a whole-card run's plan.
+func (r *run) planPrompts(s settings) (system, user string, err error) {
+	card, err := r.sent()
+	if err != nil {
+		return "", "", err
+	}
+	d := promptData{Instruction: r.Instruction, PointOfView: r.pointOfView, Context: r.Context, Action: r.Label, Keys: quoted(r.Fields)}
+	if d.Card, err = indented(card); err != nil {
+		return "", "", err
+	}
+	if d.Instructions, err = instructions(s, "whole-card"); err != nil {
+		return "", "", err
+	}
+	if d.ActionInstructions, err = instructions(s, r.instructionsKey()); err != nil {
+		return "", "", err
+	}
+	if system, err = execute("plan.system", d); err != nil {
+		return "", "", err
+	}
+	if user, err = execute("plan.user", d); err != nil {
+		return "", "", err
+	}
+	if hs := strings.TrimSpace(s.Prompts["house_style"]); hs != "" {
+		system += "\n\n## House style\n\n" + hs
+	}
+	return system, user, nil
+}
+
+// quoted is keys, each in double quotes, separated by commas.
+func quoted(keys []string) string {
+	return `"` + strings.Join(keys, `", "`) + `"`
 }
 
 // indented is v as indented JSON.

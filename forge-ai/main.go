@@ -124,6 +124,9 @@ func (srv *server) run(ctx context.Context, in *instance, params json.RawMessage
 	if in.err != nil {
 		return nil, in.err
 	}
+	if r.WholeCard && r.Field == "" {
+		return srv.wholeCard(ctx, in, r)
+	}
 	return srv.perform(ctx, in, r, true, func() func(string) { return srv.progress(r) })
 }
 
@@ -193,6 +196,14 @@ var labels = map[string]string{"name": "Name", "description": "Description", "pe
 	"dimensions": "Dimensions", "contradictions": "Contradictions", "misplaced_content": "Misplaced content",
 	"suggestions": "Suggestions"}
 
+// label names a card key in progress messages.
+func label(key string) string {
+	if l := labels[key]; l != "" {
+		return l
+	}
+	return key
+}
+
 // progress returns a callback for one request that sends one progress
 // message per key of the run's as the model starts writing it.
 func (srv *server) progress(r *run) func(string) {
@@ -208,12 +219,8 @@ func (srv *server) progress(r *run) func(string) {
 			if !slices.Contains(keys, key) || slices.Contains(announced, key) {
 				continue
 			}
-			label := labels[key]
-			if label == "" {
-				label = key
-			}
 			_ = srv.conn.Notify(protocol.NotifyProgress, protocol.Progress{Run: r.Run, Done: int64(len(announced)),
-				Total: int64(len(keys)), Message: fmt.Sprintf("Writing %s (%d of %d)", label, len(announced)+1, len(keys))})
+				Total: int64(len(keys)), Message: fmt.Sprintf("Writing %s (%d of %d)", label(key), len(announced)+1, len(keys))})
 			announced = append(announced, key)
 		}
 	}
