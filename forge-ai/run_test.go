@@ -236,6 +236,22 @@ func TestLibraryToolCallAnsweredByHost(t *testing.T) {
 	}
 }
 
+func TestToolCallExtraGoesBackToTheModel(t *testing.T) {
+	signed := toolCall("call_1", "get_card", `{"id": 7}`)
+	signed.calls[0].Extra = json.RawMessage(`{"gemini":{"thought_signature":"c2ln"}}`)
+	llm, cfg := withLLM(t, signed, streamed(`{"description": "x"}`))
+	h := startPlugin(t, cfg)
+	h.library = func(protocol.LibraryCallParams) (any, error) { return protocol.MCPCallResult{}, nil }
+	if _, err := h.run(t, sampleRun(t, "revise")); err != nil {
+		t.Fatal(err)
+	}
+	msgs := llm.requests[1]["messages"].([]any)
+	asked := msgs[len(msgs)-2].(map[string]any)["tool_calls"].([]any)[0].(map[string]any)
+	if extra, _ := json.Marshal(asked["extra"]); string(extra) != `{"gemini":{"thought_signature":"c2ln"}}` {
+		t.Fatalf("assistant tool call %v", asked)
+	}
+}
+
 func TestLibraryRefusalReachesTheModel(t *testing.T) {
 	llm, cfg := withLLM(t,
 		toolCall("call_1", "search_cards", `{"query": {"text": "Billy"}}`),
