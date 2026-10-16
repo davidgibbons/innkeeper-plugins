@@ -1,0 +1,1 @@
+{"provider": "openai-compatible", "base_url": "${INNKEEPER_FAKE_AI_URL}", "model": "contract", "kinds": ["chat"]}

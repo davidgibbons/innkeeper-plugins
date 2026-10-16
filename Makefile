@@ -12,8 +12,10 @@ build:
 # check-config.json, if present, is its instance config for the check. A config
 # makes the kit ingest first, which a catalog can't do without a database, so
 # the config is sent only when INNKEEPER_PLUGIN_DATABASE_URL is set.
+# A plugin that declares uses is checked against the ai plugin, which talks
+# to the kit's fake model server.
 check: build
-	for p in $(PLUGINS); do cfg=; [ -z "$$INNKEEPER_PLUGIN_DATABASE_URL" ] || cfg="$$(cat $$p/check-config.json 2>/dev/null)"; INNKEEPER_PLUGIN_CONFIG="$$cfg" go tool innkeeper plugin check $$p || exit 1; done
+	for p in $(PLUGINS); do cfg=; [ -z "$$INNKEEPER_PLUGIN_DATABASE_URL" ] || cfg="$$(cat $$p/check-config.json 2>/dev/null)"; INNKEEPER_PLUGIN_CONFIG="$$cfg" INNKEEPER_PROVIDER_PLUGIN=ai INNKEEPER_PROVIDER_CONFIG="$$(cat ai/check-provider.json)" go tool innkeeper plugin check $$p || exit 1; done
 
 # Copies each plugin's binary, manifest, and icon into DEST, such as an image's plugin folder.
 # build runs after the DEST check, so a missing DEST fails before building.
