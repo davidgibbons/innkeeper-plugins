@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/davidgibbons/innkeeper/protocol"
 	anyllm "github.com/mozilla-ai/any-llm-go"
@@ -56,4 +57,58 @@ func hideKey(msg, apiKey string) string {
 		return msg
 	}
 	return strings.ReplaceAll(msg, apiKey, "[redacted]")
+}
+
+// probeChat asks for one token.
+func probeChat(ctx context.Context, c *connection) error {
+	one := 1
+	_, _, err := stream(ctx, c, anyllm.CompletionParams{Model: c.settings.Model, MaxTokens: &one,
+		Messages: []anyllm.Message{{Role: anyllm.RoleUser, Content: "Say OK."}}}, func(string) {})
+	return err
+}
+
+// probeEmbed embeds one word.
+func probeEmbed(ctx context.Context, c *connection) error {
+	_, err := embedTexts(ctx, c, []string{"OK"})
+	return err
+}
+
+// probeTimeout bounds Test connection, which a dead server would otherwise
+// hold for the provider's hour-long timeout.
+const probeTimeout = 30 * time.Second
+
+// runSetting runs the Test connection button: one small real call per
+// ticked kind, each reported with its latency.
+func runSetting(ctx context.Context, params json.RawMessage) (any, error) {
+	var p protocol.SettingsRunParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, invalid("%v", err)
+	}
+	if p.Action != "test" {
+		return nil, invalid("no settings action %q", p.Action)
+	}
+	apiKey := p.Secrets["api_key"]
+	c, err := connect(p.Config, apiKey)
+	if err == nil && c.llm == nil {
+		err = errors.New("choose a provider and a model first")
+	}
+	if err != nil {
+		return protocol.SettingsRunResult{Message: hideKey(err.Error(), apiKey)}, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+	res := protocol.SettingsRunResult{OK: true, Message: "Connected"}
+	for _, name := range c.settings.Kinds {
+		k := kinds[name]
+		begin := time.Now()
+		err := k.probe(ctx, c)
+		// At least 1, since latency_ms is omitted when 0.
+		check := protocol.SettingsCheck{Name: k.label, OK: err == nil, LatencyMS: max(1, time.Since(begin).Milliseconds())}
+		if err != nil {
+			check.Message = hideKey(err.Error(), apiKey)
+			res.OK, res.Message = false, "A check failed"
+		}
+		res.Checks = append(res.Checks, check)
+	}
+	return res, nil
 }

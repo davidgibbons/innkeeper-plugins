@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,13 +36,15 @@ type settings struct {
 type kind struct {
 	service string
 	label   string
+	probe   func(context.Context, *connection) error
 }
 
 // kinds are the values of the config's kinds, each with the service it
-// offers and its name in Test connection's report.
+// offers, its name in Test connection's report, and the smallest real call
+// that proves it works.
 var kinds = map[string]kind{
-	"chat":  {protocol.MethodAIChat, "Chat"},
-	"embed": {protocol.MethodAIEmbed, "Embeddings"},
+	"chat":  {protocol.MethodAIChat, "Chat", probeChat},
+	"embed": {protocol.MethodAIEmbed, "Embeddings", probeEmbed},
 }
 
 // parseSettings reads a config. It doesn't require a model, since listing

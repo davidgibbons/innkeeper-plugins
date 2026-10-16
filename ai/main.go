@@ -61,6 +61,8 @@ func (srv *server) handle(ctx context.Context, method string, params json.RawMes
 		return srv.embed(ctx, params)
 	case protocol.MethodSettingsOptions:
 		return options(ctx, params)
+	case protocol.MethodSettingsRun:
+		return runSetting(ctx, params)
 	}
 	return nil, protocol.MethodNotFound(method)
 }

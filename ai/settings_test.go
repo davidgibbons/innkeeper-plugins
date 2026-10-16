@@ -48,3 +48,51 @@ func TestOptionsForAnotherFieldIsInvalid(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func testConnection(t *testing.T, draft protocol.SettingsDraft) protocol.SettingsRunResult {
+	t.Helper()
+	h := started(t, map[string]any{})
+	var res protocol.SettingsRunResult
+	if err := h.call(protocol.MethodSettingsRun, protocol.SettingsRunParams{SettingsDraft: draft, Action: "test"}, &res); err != nil {
+		t.Fatal(err)
+	}
+	return res
+}
+
+func TestConnectionTestChecksEachKind(t *testing.T) {
+	llm := &fakeLLM{chat: []string{content("OK")}}
+	res := testConnection(t, protocol.SettingsDraft{Config: withLLM(t, llm, "chat", "embed")})
+	if !res.OK || len(res.Checks) != 2 || res.Checks[0].Name != "Chat" || res.Checks[1].Name != "Embeddings" ||
+		!res.Checks[0].OK || !res.Checks[1].OK || res.Checks[0].LatencyMS <= 0 || res.Checks[1].LatencyMS <= 0 {
+		t.Fatalf("result %+v", res)
+	}
+	if len(llm.paths) != 2 || !strings.HasSuffix(llm.paths[0], "/chat/completions") || !strings.HasSuffix(llm.paths[1], "/embeddings") {
+		t.Fatalf("paths %v", llm.paths)
+	}
+}
+
+func TestConnectionTestReportsAFailedKind(t *testing.T) {
+	res := testConnection(t, protocol.SettingsDraft{Config: withLLM(t, &fakeLLM{status: 400}),
+		Secrets: map[string]string{"api_key": "sk-secret"}})
+	if res.OK || len(res.Checks) != 1 || res.Checks[0].OK || !strings.Contains(res.Checks[0].Message, "refused by the fake") ||
+		strings.Contains(res.Checks[0].Message, "sk-secret") {
+		t.Fatalf("result %+v", res)
+	}
+}
+
+func TestConnectionTestReportsBadSettings(t *testing.T) {
+	for _, cfg := range []map[string]any{{}, {"provider": "openai-compatible", "model": "m"}} {
+		res := testConnection(t, protocol.SettingsDraft{Config: cfg})
+		if res.OK || res.Message == "" || len(res.Checks) != 0 {
+			t.Errorf("%v: result %+v", cfg, res)
+		}
+	}
+}
+
+func TestUnknownSettingsActionIsInvalid(t *testing.T) {
+	h := started(t, map[string]any{})
+	err := h.call(protocol.MethodSettingsRun, protocol.SettingsRunParams{Action: "reboot"}, nil)
+	if rpcCode(err) != protocol.CodeInvalidParams {
+		t.Fatalf("err = %v", err)
+	}
+}
