@@ -8,13 +8,10 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"slices"
 	"strings"
 
 	"github.com/davidgibbons/innkeeper-plugins/internal/pluginio"
 	"github.com/davidgibbons/innkeeper/protocol"
-	anyllm "github.com/mozilla-ai/any-llm-go"
-	llmerrors "github.com/mozilla-ai/any-llm-go/errors"
 )
 
 // maxToolRounds caps a run's requests to the model; the last offers no tools.
@@ -22,7 +19,7 @@ const maxToolRounds = 8
 
 // libraryTools are the core's read tools a library action may call. The
 // schemas are the parts of Innkeeper's MCP tool inputs a model needs.
-var libraryTools = []anyllm.Tool{
+var libraryTools = []protocol.ChatTool{
 	tool("search_cards", "Search the library's cards by text. Returns matching cards with the fields asked for.",
 		map[string]any{"query": map[string]any{"type": "object", "properties": map[string]any{
 			"text":   map[string]any{"type": "string", "description": "Words to match in name, description, personality, scenario, creator notes, and first message"},
@@ -36,9 +33,9 @@ var libraryTools = []anyllm.Tool{
 		map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"card", "lorebook"}}, "id": map[string]any{"type": "integer"}}, "kind", "id"),
 }
 
-func tool(name, description string, properties map[string]any, required ...string) anyllm.Tool {
-	return anyllm.Tool{Type: "function", Function: anyllm.Function{Name: name, Description: description,
-		Parameters: map[string]any{"type": "object", "properties": properties, "required": required}}}
+func tool(name, description string, properties map[string]any, required ...string) protocol.ChatTool {
+	params, _ := json.Marshal(map[string]any{"type": "object", "properties": properties, "required": required})
+	return protocol.ChatTool{Name: name, Description: description, Parameters: params}
 }
 
 // toolFunc answers one tool call.
@@ -78,100 +75,75 @@ func coreLibrary(conn *protocol.Conn, run string) toolFunc {
 
 // toolbox is the tools a run offers the model and what answers their calls.
 type toolbox struct {
-	tools []anyllm.Tool
+	tools []protocol.ChatTool
 	call  toolFunc
 }
 
 // complete runs the conversation to the model's final answer, answering its
 // tool calls through box. newProgress gives each request its own callback,
 // which gets that request's text so far.
-func complete(ctx context.Context, in *instance, params anyllm.CompletionParams, box toolbox, newProgress func() func(string)) (string, error) {
+func (srv *server) complete(ctx context.Context, in *instance, run string, params protocol.AIChatParams, box toolbox, newProgress func() func(string)) (protocol.AIChatResult, error) {
+	params.Instance = in.settings.Connection
 	for round := 1; ; round++ {
 		if err := ctx.Err(); err != nil {
-			return "", err
+			return protocol.AIChatResult{}, err
 		}
 		// The last round offers no tools, so the model has to answer.
 		params.Tools = box.tools
 		if round == maxToolRounds {
 			params.Tools = nil
 		}
-		text, calls, err := stream(ctx, in, params, newProgress())
-		if err != nil && round == 1 && params.Tools != nil && errors.Is(err, llmerrors.ErrInvalidRequest) {
+		res, err := srv.chat(ctx, run, params, newProgress())
+		if err != nil && round == 1 && params.Tools != nil && rejected(err) {
 			// Most likely a model without tool support; the context and forced skills in the prompt still apply.
 			fmt.Fprintf(os.Stderr, "retrying without tools: %v\n", err)
 			box.tools, params.Tools = nil, nil
-			text, calls, err = stream(ctx, in, params, newProgress())
+			res, err = srv.chat(ctx, run, params, newProgress())
 		}
-		if err != nil || len(calls) == 0 || params.Tools == nil {
-			return text, err
+		if err != nil || len(res.ToolCalls) == 0 || params.Tools == nil {
+			return res, err
 		}
-		params.Messages = append(params.Messages, anyllm.Message{Role: anyllm.RoleAssistant, Content: text, ToolCalls: calls})
-		for _, c := range calls {
-			result, err := box.call(ctx, c.Function.Name, c.Function.Arguments)
+		params.Messages = append(params.Messages, protocol.ChatMessage{Role: "assistant", Content: res.Text, ToolCalls: res.ToolCalls})
+		for _, c := range res.ToolCalls {
+			result, err := box.call(ctx, c.Name, c.Arguments)
 			if err == nil {
 				err = ctx.Err()
 			}
 			if err != nil {
-				return "", fmt.Errorf("tool %s: %w", c.Function.Name, err)
+				return protocol.AIChatResult{}, fmt.Errorf("tool %s: %w", c.Name, err)
 			}
-			params.Messages = append(params.Messages, anyllm.Message{Role: anyllm.RoleTool, Content: result, ToolCallID: c.ID})
+			params.Messages = append(params.Messages, protocol.ChatMessage{Role: "tool", Content: result, ToolCallID: c.ID})
 		}
 	}
 }
 
-// stream runs one request, returning its text and any tool calls.
-func stream(ctx context.Context, in *instance, params anyllm.CompletionParams, onText func(string)) (string, []anyllm.ToolCall, error) {
-	params.Stream = true
-	chunks, errs := in.llm.CompletionStream(ctx, params)
+// chat sends one ai.chat through the core under its own streaming token,
+// passing onText the reply's text so far as it streams.
+func (srv *server) chat(ctx context.Context, run string, params protocol.AIChatParams, onText func(string)) (protocol.AIChatResult, error) {
+	params.Run = fmt.Sprintf("%s/%d", run, srv.chats.Add(1))
 	var text strings.Builder
-	var calls []anyllm.ToolCall
-	for chunk := range chunks {
-		for _, c := range chunk.Choices {
-			if c.Delta.Content != "" {
-				text.WriteString(c.Delta.Content)
-				onText(text.String())
-			}
-			calls = mergeToolCalls(in.settings.Provider, calls, c.Delta.ToolCalls)
-		}
-	}
-	if err := <-errs; err != nil {
-		return "", nil, err
-	}
-	return text.String(), calls, ctx.Err()
+	srv.deltas.Store(params.Run, func(piece string) {
+		text.WriteString(piece)
+		onText(text.String())
+	})
+	defer srv.deltas.Delete(params.Run)
+	var res protocol.AIChatResult
+	err := srv.conn.Call(ctx, protocol.MethodAIChat, params, &res)
+	return res, err
 }
 
-// mergeToolCalls adds streamed tool call deltas to calls. any-llm-go passes
-// on each provider's own streaming shape, with no index to match on:
-//   - anthropic resends the whole call so far under its ID;
-//   - ollama sends whole calls, numbered within each chunk, so IDs repeat;
-//   - the rest send whole calls with unique IDs, or OpenAI-style fragments
-//     whose first carries the ID and later ones carry it or nothing.
-func mergeToolCalls(provider string, calls, deltas []anyllm.ToolCall) []anyllm.ToolCall {
-	for _, d := range deltas {
-		d.Type = "function"
-		i := slices.IndexFunc(calls, func(c anyllm.ToolCall) bool { return d.ID != "" && c.ID == d.ID })
-		switch {
-		case provider == "ollama" || len(calls) == 0 || (d.ID != "" && i < 0):
-			calls = append(calls, d)
-		case provider == "anthropic" && i >= 0:
-			calls[i] = d
-		default:
-			if i < 0 {
-				i = len(calls) - 1
-			}
-			calls[i].Function.Name += d.Function.Name
-			calls[i].Function.Arguments += d.Function.Arguments
-		}
-	}
-	return calls
+// rejected reports a provider refusing the request as invalid.
+func rejected(err error) bool {
+	var rpcErr *protocol.Error
+	return errors.As(err, &rpcErr) && rpcErr.Code == protocol.CodeAIRejected
 }
 
 // imagePart reads an image from the blob store as a data URL.
-func imagePart(path string) (anyllm.ContentPart, error) {
+func imagePart(path string) (protocol.ContentPart, error) {
 	b, err := pluginio.ReadFile(path)
 	if err != nil {
-		return anyllm.ContentPart{}, fmt.Errorf("read image: %w", err)
+		return protocol.ContentPart{}, fmt.Errorf("read image: %w", err)
 	}
 	url := "data:" + http.DetectContentType(b) + ";base64," + base64.StdEncoding.EncodeToString(b)
-	return anyllm.ContentPart{Type: "image_url", ImageURL: &anyllm.ImageURL{URL: url}}, nil
+	return protocol.ContentPart{Type: "image_url", ImageURL: url}, nil
 }

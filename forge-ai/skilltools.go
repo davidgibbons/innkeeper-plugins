@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	anyllm "github.com/mozilla-ai/any-llm-go"
+	"github.com/davidgibbons/innkeeper/protocol"
 )
 
 // maxForced caps the forced skills' instructions in one prompt.
@@ -65,7 +65,7 @@ func skillsPrompt(forced []skill) string {
 
 // skillTools offers the enabled skills. load_skill's description lists
 // them, so a model run without tools never hears of them.
-func skillTools(enabled []skill) []anyllm.Tool {
+func skillTools(enabled []skill) []protocol.ChatTool {
 	var list strings.Builder
 	var names []string
 	for _, sk := range enabled {
@@ -73,7 +73,7 @@ func skillTools(enabled []skill) []anyllm.Tool {
 		names = append(names, sk.Name)
 	}
 	name := map[string]any{"type": "string", "enum": names}
-	return []anyllm.Tool{
+	return []protocol.ChatTool{
 		tool("load_skill", "Load a skill's instructions and the names of its reference files. Load a skill when its description fits the task. Skills:"+list.String(),
 			map[string]any{"name": name}, "name"),
 		tool("load_skill_file", "Read one of a skill's reference files, by the path load_skill lists or the skill's instructions name.",

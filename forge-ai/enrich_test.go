@@ -4,10 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"maps"
-	"net/http"
-	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
@@ -109,36 +106,24 @@ func TestEnrichWithoutSettingsFailsTheCall(t *testing.T) {
 	h := startPlugin(t, map[string]any{}, nil)
 	_, err := h.enrich(t, enrichParams("Brakka"))
 	var rpc *protocol.Error
-	if !errors.As(err, &rpc) || rpc.Code == -32601 || !strings.Contains(rpc.Message, "provider") {
+	if !errors.As(err, &rpc) || rpc.Code == -32601 || !strings.Contains(rpc.Message, "connection") {
 		t.Fatalf("err = %v, want a settings error", err)
 	}
 }
 
 func TestEnrichCancelStopsFurtherCalls(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	f := &fakeLLM{replies: []fakeReply{streamed(evaluated), streamed(evaluated)}}
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cancel() // The owner pressed Stop during the first call.
-		f.ServeHTTP(w, r)
-	}))
-	t.Cleanup(ts.Close)
-	s, err := parseSettings(map[string]any{"provider": "openai-compatible", "base_url": ts.URL, "model": "m"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	in := &instance{settings: s}
-	if in.llm, err = s.provider(""); err != nil {
-		t.Fatal(err)
-	}
-	srv := &server{conn: protocol.NewConn(strings.NewReader(""), io.Discard, nil)}
+	llm, cfg := withLLM(t, streamed(evaluated), streamed(evaluated))
+	llm.onRequest = cancel // The owner pressed Stop during the first call.
+	h := startPlugin(t, cfg, nil)
 	params, _ := json.Marshal(enrichParams("Brakka", "Mira"))
-	if _, err := srv.enrich(ctx, in, params); !errors.Is(err, context.Canceled) {
+	if _, err := h.srv.enrich(ctx, h.srv.cur.Load(), params); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if len(f.requests) > 1 {
-		t.Fatalf("%d requests after cancel, want at most 1", len(f.requests))
+	llm.mu.Lock()
+	defer llm.mu.Unlock()
+	if len(llm.requests) > 1 {
+		t.Fatalf("%d requests after cancel, want at most 1", len(llm.requests))
 	}
 }
 

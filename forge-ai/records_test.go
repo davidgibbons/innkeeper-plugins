@@ -199,15 +199,15 @@ func systemPrompt(req map[string]any) string {
 
 func TestLoadSkillToolCall(t *testing.T) {
 	llm, h := skillsHost(t,
-		fakeReply{deltas: []string{toolCall("call_1", "load_skill", `{"name": "college"}`)}},
-		fakeReply{deltas: []string{toolCall("call_2", "load_skill_file", `{"name": "college", "path": "references/campus.md"}`)}},
-		fakeReply{deltas: []string{toolCall("call_3", "load_skill", `{"name": "disabled"}`)}},
+		toolCall("call_1", "load_skill", `{"name": "college"}`),
+		toolCall("call_2", "load_skill_file", `{"name": "college", "path": "references/campus.md"}`),
+		toolCall("call_3", "load_skill", `{"name": "disabled"}`),
 		streamed(`{"description": "A towering orc."}`))
 	if _, err := h.run(t, sampleRun(t, "tighten")); err != nil {
 		t.Fatal(err)
 	}
 	tools := llm.requests[0]["tools"].([]any)
-	desc := tools[0].(map[string]any)["function"].(map[string]any)["description"].(string)
+	desc := tools[0].(map[string]any)["description"].(string)
 	if len(tools) != 2 || !strings.Contains(desc, "- college: Campus life.") || strings.Contains(desc, "disabled") {
 		t.Fatalf("tools %v", tools)
 	}

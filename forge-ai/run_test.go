@@ -4,75 +4,82 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/davidgibbons/innkeeper/protocol"
-	anyllm "github.com/mozilla-ai/any-llm-go"
 )
 
-// fakeLLM speaks the OpenAI-compatible chat API. Each request gets the next
-// reply: a list of SSE chunk deltas, or an HTTP status to fail with.
+// fakeLLM stands in for an ai instance: the fake host answers each ai.chat
+// for its connection with the next reply. requests holds each call's params
+// as a JSON object.
 type fakeLLM struct {
-	mu       sync.Mutex
-	replies  []fakeReply
-	requests []map[string]any
+	mu        sync.Mutex
+	replies   []fakeReply
+	requests  []map[string]any
+	onRequest func()
 }
 
 type fakeReply struct {
-	status int
-	deltas []string // each a JSON delta object
+	status int      // nonzero: refuse with -32010, as a model without tool support does
+	deltas []string // the reply's text, streamed piece by piece
+	calls  []protocol.ToolCall
 }
 
-func content(text string) string {
-	b, _ := json.Marshal(map[string]string{"content": text})
-	return string(b)
-}
-
-// streamed splits text into small content deltas, as a model streams it.
+// streamed splits text into small pieces, as a model streams it.
 func streamed(text string) fakeReply {
 	var r fakeReply
 	for len(text) > 0 {
 		n := min(7, len(text))
-		r.deltas = append(r.deltas, content(text[:n]))
+		r.deltas = append(r.deltas, text[:n])
 		text = text[n:]
 	}
 	return r
 }
 
-func (f *fakeLLM) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func toolCall(id, name, args string) fakeReply {
+	return fakeReply{calls: []protocol.ToolCall{{ID: id, Name: name, Arguments: args}}}
+}
+
+// llms finds a test's fakeLLM by the connection ID in its config.
+var (
+	llms   sync.Map
+	llmIDs atomic.Int64
+)
+
+// answer replies to one ai.chat, streaming its text to conn first.
+func (f *fakeLLM) answer(conn *protocol.Conn, raw json.RawMessage) (any, error) {
 	var body map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, err.Error(), 400)
-		return
+	var p protocol.AIChatParams
+	if err := json.Unmarshal(raw, &body); err != nil || json.Unmarshal(raw, &p) != nil {
+		return nil, protocol.NewError(protocol.CodeInvalidParams, "bad ai.chat", false)
 	}
 	f.mu.Lock()
 	f.requests = append(f.requests, body)
+	hook := f.onRequest
 	if len(f.replies) == 0 {
 		f.mu.Unlock()
-		http.Error(w, `{"error": {"message": "no reply scripted"}}`, 500)
-		return
+		return nil, protocol.NewError(-32000, "no reply scripted", false)
 	}
 	reply := f.replies[0]
 	f.replies = f.replies[1:]
 	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 	if reply.status != 0 {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(reply.status)
-		fmt.Fprint(w, `{"error": {"message": "this model does not support tools", "type": "invalid_request_error"}}`)
-		return
+		return nil, protocol.NewError(protocol.CodeAIRejected, "this model does not support tools", false)
 	}
-	w.Header().Set("Content-Type", "text/event-stream")
+	var text strings.Builder
 	for _, d := range reply.deltas {
-		fmt.Fprintf(w, "data: {\"id\": \"c\", \"object\": \"chat.completion.chunk\", \"model\": \"m\", \"choices\": [{\"index\": 0, \"delta\": %s}]}\n\n", d)
+		_ = conn.Notify(protocol.NotifyAIDelta, protocol.AIDelta{Run: p.Run, Text: d})
+		text.WriteString(d)
 	}
-	fmt.Fprint(w, "data: [DONE]\n\n")
+	return protocol.AIChatResult{Text: text.String(), ToolCalls: reply.calls, Model: "m"}, nil
 }
 
 // host is a fake Innkeeper core: it talks to the plugin's handler over pipes,
@@ -83,6 +90,7 @@ type host struct {
 	progress []protocol.Progress
 	calls    []protocol.LibraryCallParams
 	library  func(protocol.LibraryCallParams) (any, error)
+	srv      *server
 }
 
 func startPlugin(t *testing.T, config map[string]any, secrets map[string]string) *host {
@@ -97,7 +105,17 @@ func startWith(t *testing.T, params protocol.InitializeParams) *host {
 	srv := &server{}
 	srv.conn = protocol.NewConn(toPlugin, fromPlugin, srv.handle)
 	h := &host{}
+	h.srv = srv
 	h.conn = protocol.NewConn(toHost, fromHost, func(ctx context.Context, method string, params json.RawMessage) (any, error) {
+		if method == protocol.MethodAIChat {
+			var call protocol.ServiceCall
+			_ = json.Unmarshal(params, &call)
+			f, ok := llms.Load(call.Instance)
+			if !ok {
+				return nil, protocol.NewError(protocol.CodeForbidden, "no such connection", false)
+			}
+			return f.(*fakeLLM).answer(h.conn, params)
+		}
 		h.mu.Lock()
 		defer h.mu.Unlock()
 		switch method {
@@ -141,9 +159,10 @@ func (h *host) run(t *testing.T, p protocol.ActionRunParams) (protocol.ActionRun
 
 func withLLM(t *testing.T, replies ...fakeReply) (*fakeLLM, map[string]any) {
 	f := &fakeLLM{replies: replies}
-	ts := httptest.NewServer(f)
-	t.Cleanup(ts.Close)
-	return f, map[string]any{"provider": "openai-compatible", "base_url": ts.URL, "model": "m", "house_style": "No em dashes."}
+	id := llmIDs.Add(1)
+	llms.Store(id, f)
+	t.Cleanup(func() { llms.Delete(id) })
+	return f, map[string]any{"connection": id, "house_style": "No em dashes."}
 }
 
 const generated = `<think>An orc courier, I think.</think>{"name": "Ash", "description": "A courier.", "personality": "Wry.",
@@ -176,8 +195,8 @@ func TestRunStreamsProgressPerField(t *testing.T) {
 		t.Fatalf("progress %q", messages)
 	}
 	req := llm.requests[0]
-	if req["stream"] != true || req["model"] != "m" {
-		t.Fatalf("request %v", req)
+	if run, _ := req["run"].(string); !strings.HasPrefix(run, "1.1/") {
+		t.Fatalf("request %v: want a streaming token under the run's", req)
 	}
 	system := req["messages"].([]any)[0].(map[string]any)["content"].(string)
 	if !strings.Contains(system, "No em dashes.") {
@@ -185,20 +204,9 @@ func TestRunStreamsProgressPerField(t *testing.T) {
 	}
 }
 
-func toolCall(id, name, args string) string {
-	b, _ := json.Marshal(map[string]any{"tool_calls": []any{map[string]any{
-		"index": 0, "id": id, "type": "function", "function": map[string]any{"name": name, "arguments": args}}}})
-	return string(b)
-}
-
-func argsDelta(args string) string {
-	b, _ := json.Marshal(map[string]any{"tool_calls": []any{map[string]any{"index": 0, "function": map[string]any{"arguments": args}}}})
-	return string(b)
-}
-
 func TestLibraryToolCallAnsweredByHost(t *testing.T) {
 	llm, cfg := withLLM(t,
-		fakeReply{deltas: []string{toolCall("call_1", "get_card", ""), argsDelta(`{"id"`), argsDelta(`: 7}`)}},
+		toolCall("call_1", "get_card", `{"id": 7}`),
 		streamed(`{"name": "Brakka", "description": "Billy's brother."}`))
 	h := startPlugin(t, cfg, nil)
 	h.library = func(p protocol.LibraryCallParams) (any, error) {
@@ -222,7 +230,7 @@ func TestLibraryToolCallAnsweredByHost(t *testing.T) {
 	if last["role"] != "tool" || last["tool_call_id"] != "call_1" || !strings.Contains(last["content"].(string), "A goblin.") {
 		t.Fatalf("tool result message %v", last)
 	}
-	asked := msgs[len(msgs)-2].(map[string]any)["tool_calls"].([]any)[0].(map[string]any)["function"].(map[string]any)
+	asked := msgs[len(msgs)-2].(map[string]any)["tool_calls"].([]any)[0].(map[string]any)
 	if asked["arguments"] != `{"id": 7}` {
 		t.Fatalf("assistant tool call %v", asked)
 	}
@@ -230,7 +238,7 @@ func TestLibraryToolCallAnsweredByHost(t *testing.T) {
 
 func TestLibraryRefusalReachesTheModel(t *testing.T) {
 	llm, cfg := withLLM(t,
-		fakeReply{deltas: []string{toolCall("call_1", "search_cards", `{"query": {"text": "Billy"}}`)}},
+		toolCall("call_1", "search_cards", `{"query": {"text": "Billy"}}`),
 		streamed(`{"description": "Alone."}`))
 	h := startPlugin(t, cfg, nil)
 	if _, err := h.run(t, sampleRun(t, "revise")); err != nil {
@@ -282,7 +290,7 @@ func TestRunWithoutSettingsFails(t *testing.T) {
 	h := startPlugin(t, map[string]any{}, nil)
 	_, err := h.run(t, sampleRun(t, "tighten"))
 	var rpc *protocol.Error
-	if !errors.As(err, &rpc) || rpc.Code == -32601 || !strings.Contains(rpc.Message, "provider") {
+	if !errors.As(err, &rpc) || rpc.Code == -32601 || !strings.Contains(rpc.Message, "connection") {
 		t.Fatalf("err = %v, want a settings error", err)
 	}
 }
@@ -311,8 +319,8 @@ func TestReferenceImageSent(t *testing.T) {
 	if _, err := h.run(t, p); err != nil {
 		t.Fatal(err)
 	}
-	parts := llm.requests[0]["messages"].([]any)[1].(map[string]any)["content"].([]any)
-	url := parts[1].(map[string]any)["image_url"].(map[string]any)["url"].(string)
+	parts := llm.requests[0]["messages"].([]any)[1].(map[string]any)["parts"].([]any)
+	url := parts[1].(map[string]any)["image_url"].(string)
 	if len(parts) != 2 || !strings.HasPrefix(url, "data:image/png;base64,") {
 		t.Fatalf("user content %v", parts)
 	}
@@ -321,43 +329,10 @@ func TestReferenceImageSent(t *testing.T) {
 	}
 }
 
-func TestMergeToolCallsAcrossProviders(t *testing.T) {
-	call := func(id, name, args string) anyllm.ToolCall {
-		return anyllm.ToolCall{ID: id, Function: anyllm.FunctionCall{Name: name, Arguments: args}}
-	}
-	merged := func(provider string, chunks ...anyllm.ToolCall) []anyllm.ToolCall {
-		var calls []anyllm.ToolCall
-		for _, d := range chunks {
-			calls = mergeToolCalls(provider, calls, []anyllm.ToolCall{d})
-		}
-		return calls
-	}
-	// Anthropic resends each call whole under its ID.
-	calls := merged("anthropic", call("a", "get_card", `{"id"`), call("a", "get_card", `{"id": 1}`), call("b", "get_card", `{"id": 2}`))
-	if len(calls) != 2 || calls[0].Function.Arguments != `{"id": 1}` || calls[1].ID != "b" || calls[0].Type != "function" {
-		t.Fatalf("anthropic: calls %+v", calls)
-	}
-	// any-llm-go numbers Ollama's calls within each chunk, so IDs repeat across calls.
-	calls = merged("ollama", call("call_0", "get_card", `{"id": 1}`), call("call_0", "get_card", `{"id": 2}`))
-	if len(calls) != 2 || calls[1].Function.Arguments != `{"id": 2}` {
-		t.Fatalf("ollama: calls %+v", calls)
-	}
-	// OpenAI-compatible fragments: the ID on the first only, or on every one.
-	for _, chunks := range [][]anyllm.ToolCall{
-		{call("x", "get_card", ""), call("", "", `{"id"`), call("", "", `: 1}`), call("y", "get_lorebook", `{"id": 2}`)},
-		{call("x", "get_card", ""), call("x", "", `{"id"`), call("x", "", `: 1}`), call("y", "get_lorebook", `{"id": 2}`)},
-	} {
-		calls = merged("openai-compatible", chunks...)
-		if len(calls) != 2 || calls[0].Function.Arguments != `{"id": 1}` || calls[1].Function.Name != "get_lorebook" {
-			t.Fatalf("openai-compatible: calls %+v", calls)
-		}
-	}
-}
-
 func TestFinalRoundOffersNoTools(t *testing.T) {
 	var replies []fakeReply
 	for range maxToolRounds - 1 {
-		replies = append(replies, fakeReply{deltas: []string{toolCall("call_1", "get_card", `{"id": 7}`)}})
+		replies = append(replies, toolCall("call_1", "get_card", `{"id": 7}`))
 	}
 	llm, cfg := withLLM(t, append(replies, streamed(`{"description": "Done."}`))...)
 	h := startPlugin(t, cfg, nil)
@@ -376,7 +351,7 @@ func TestFinalRoundOffersNoTools(t *testing.T) {
 }
 
 func TestNoRetryWithoutToolsAfterToolResults(t *testing.T) {
-	llm, cfg := withLLM(t, fakeReply{deltas: []string{toolCall("call_1", "get_card", `{"id": 7}`)}}, fakeReply{status: 400})
+	llm, cfg := withLLM(t, toolCall("call_1", "get_card", `{"id": 7}`), fakeReply{status: 400})
 	h := startPlugin(t, cfg, nil)
 	if _, err := h.run(t, sampleRun(t, "revise")); err == nil {
 		t.Fatal("a rejected second round succeeded")
@@ -387,7 +362,7 @@ func TestNoRetryWithoutToolsAfterToolResults(t *testing.T) {
 }
 
 func TestEndedRunStopsTheToolLoop(t *testing.T) {
-	llm, cfg := withLLM(t, fakeReply{deltas: []string{toolCall("call_1", "get_card", `{"id": 7}`)}}, streamed(`{"description": "x"}`))
+	llm, cfg := withLLM(t, toolCall("call_1", "get_card", `{"id": 7}`), streamed(`{"description": "x"}`))
 	h := startPlugin(t, cfg, nil)
 	h.library = func(protocol.LibraryCallParams) (any, error) {
 		return nil, protocol.NewError(-32602, "run 1.1 has finished", false)
@@ -401,22 +376,16 @@ func TestEndedRunStopsTheToolLoop(t *testing.T) {
 }
 
 func TestCancelStopsTheToolLoop(t *testing.T) {
-	llm, cfg := withLLM(t, fakeReply{deltas: []string{toolCall("call_1", "get_card", `{"id": 7}`)}}, streamed(`{"description": "x"}`))
-	s, err := parseSettings(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	in := &instance{settings: s}
-	if in.llm, err = s.provider(""); err != nil {
-		t.Fatal(err)
-	}
+	llm, cfg := withLLM(t, toolCall("call_1", "get_card", `{"id": 7}`), streamed(`{"description": "x"}`))
+	h := startPlugin(t, cfg, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	lib := func(context.Context, string, string) (string, error) {
 		cancel() // The owner pressed Stop while the tool ran.
 		return "{}", nil
 	}
-	params := anyllm.CompletionParams{Model: "m", Messages: []anyllm.Message{{Role: anyllm.RoleUser, Content: "hi"}}}
-	if _, err := complete(ctx, in, params, toolbox{tools: libraryTools, call: lib}, func() func(string) { return func(string) {} }); !errors.Is(err, context.Canceled) {
+	params := protocol.AIChatParams{Messages: []protocol.ChatMessage{{Role: "user", Content: "hi"}}}
+	noProgress := func() func(string) { return func(string) {} }
+	if _, err := h.srv.complete(ctx, h.srv.cur.Load(), "1.1", params, toolbox{tools: libraryTools, call: lib}, noProgress); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 	if len(llm.requests) != 1 {
@@ -426,7 +395,7 @@ func TestCancelStopsTheToolLoop(t *testing.T) {
 
 func TestProgressRestartsEachRound(t *testing.T) {
 	_, cfg := withLLM(t,
-		fakeReply{deltas: []string{content(`{"description": "draft"`), toolCall("call_1", "get_card", `{"id": 7}`)}},
+		fakeReply{deltas: []string{`{"description": "draft"`}, calls: []protocol.ToolCall{{ID: "call_1", Name: "get_card", Arguments: `{"id": 7}`}}},
 		streamed(`{"bogus": 1, "description": "Billy's brother."}`))
 	h := startPlugin(t, cfg, nil)
 	h.library = func(protocol.LibraryCallParams) (any, error) { return protocol.MCPCallResult{}, nil }

@@ -3,27 +3,19 @@ version = "0.4.0"
 protocol = 1
 command = ["./forge-ai"]
 capabilities = ["action", "records", "enrich"]
-secrets = ["api_key"]
+uses = ["ai.chat"]
 database = true
 
 [config]
 type = "object"
-required = ["provider", "model"]
+required = ["connection"]
 
-[config.properties.provider]
-type = "string"
-title = "Provider"
-enum = ["openai-compatible", "openai", "anthropic", "gemini", "mistral", "groq", "deepseek", "ollama", "llamacpp", "llamafile"]
-description = "openai-compatible covers vLLM, llama.cpp servers, LM Studio, and OpenRouter. The API key is optional for it and for ollama, llamacpp, and llamafile."
-
-[config.properties.base_url]
-type = "string"
-title = "Base URL"
-description = "The API's URL, such as http://localhost:1234/v1. Required for openai-compatible; for other providers it overrides the default."
-
-[config.properties.model]
-type = "string"
-title = "Model"
+[config.properties.connection]
+type = "integer"
+title = "AI connection"
+format = "instance"
+x-offers = "ai.chat"
+description = "The ai instance whose chat model every action uses."
 
 [config.properties.temperature]
 type = "number"

@@ -1,6 +1,6 @@
 // Command forge-ai is an action plugin. It writes, revises, tightens,
 // evaluates, and scores character cards, and adds lorebook entries, with a
-// language model, through any-llm-go.
+// language model, through an ai instance's ai.chat.
 package main
 
 import (
@@ -9,19 +9,18 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"sync"
 	"sync/atomic"
 
 	"github.com/davidgibbons/innkeeper/protocol"
-	anyllm "github.com/mozilla-ai/any-llm-go"
 )
 
 const version = "0.4.0"
 
-// instance is the model setup initialize configured. err is a settings
-// problem, reported by the first run. store is nil without a database_url.
+// instance is the setup initialize configured. err is a settings problem,
+// reported by the first run. store is nil without a database_url.
 type instance struct {
 	settings settings
-	llm      anyllm.Provider
 	err      error
 	store    *store
 }
@@ -30,6 +29,9 @@ type server struct {
 	conn *protocol.Conn
 	// Set by initialize; requests run on other goroutines.
 	cur atomic.Pointer[instance]
+	// deltas maps an ai.chat's streaming token to its text callback.
+	deltas sync.Map
+	chats  atomic.Int64
 }
 
 func main() {
@@ -56,12 +58,17 @@ func (srv *server) handle(ctx context.Context, method string, params json.RawMes
 			}
 		}
 		in.settings, in.err = parseSettings(p.Config)
-		if in.err == nil {
-			in.llm, in.err = in.settings.provider(p.Secrets["api_key"])
-		}
 		srv.cur.Store(in)
 		return protocol.InitializeResult{Protocol: protocol.Version, Name: "forge-ai", Version: version,
 			Capabilities: []string{"action", "records", "enrich"}}, nil
+	case protocol.NotifyAIDelta:
+		var d protocol.AIDelta
+		if json.Unmarshal(params, &d) == nil {
+			if onText, ok := srv.deltas.Load(d.Run); ok {
+				onText.(func(string))(d.Text)
+			}
+		}
+		return nil, nil
 	case protocol.MethodShutdown:
 		if in := srv.cur.Load(); in != nil && in.store != nil {
 			in.store.close()
@@ -147,9 +154,9 @@ func (srv *server) perform(ctx context.Context, in *instance, r *run, offerTools
 		}
 		box = in.tools(enabled, lib)
 	}
-	var userContent any = user
+	message := protocol.ChatMessage{Role: "user", Content: user}
 	if r.Images.Reference != "" || r.Images.Avatar != "" {
-		parts := []anyllm.ContentPart{{Type: "text", Text: user}}
+		message = protocol.ChatMessage{Role: "user", Parts: []protocol.ContentPart{{Type: "text", Text: user}}}
 		for _, path := range []string{r.Images.Reference, r.Images.Avatar} {
 			if path == "" {
 				continue
@@ -158,18 +165,18 @@ func (srv *server) perform(ctx context.Context, in *instance, r *run, offerTools
 			if err != nil {
 				return nil, err
 			}
-			parts = append(parts, part)
+			message.Parts = append(message.Parts, part)
 		}
-		userContent = parts
 	}
 	temperature, maxTokens := r.limits(in.settings)
-	req := anyllm.CompletionParams{Model: in.settings.Model, Temperature: &temperature, MaxTokens: &maxTokens,
-		Messages: []anyllm.Message{{Role: anyllm.RoleSystem, Content: system}, {Role: anyllm.RoleUser, Content: userContent}}}
-	output, err := complete(ctx, in, req, box, newProgress)
+	req := protocol.AIChatParams{Temperature: &temperature, MaxTokens: &maxTokens,
+		Messages: []protocol.ChatMessage{{Role: "system", Content: system}, message}}
+	reply, err := srv.complete(ctx, in, r.Run, req, box, newProgress)
 	if err != nil {
 		return nil, err
 	}
-	res, err := r.result(output)
+	r.model = reply.Model
+	res, err := r.result(reply.Text)
 	if err != nil {
 		return nil, err
 	}

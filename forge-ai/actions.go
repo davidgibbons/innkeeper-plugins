@@ -96,6 +96,8 @@ type run struct {
 	draft       map[string]json.RawMessage
 	pointOfView string
 	count       int
+	// model is the model that answered, from the ai instance's reply.
+	model string
 }
 
 func invalid(format string, args ...any) error {
