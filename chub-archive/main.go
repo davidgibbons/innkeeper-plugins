@@ -65,7 +65,9 @@ func main() {
 
 // dropOldTables drops the catalog index that chub-archive 0.2 kept. Dropping
 // its migration record too lets a rollback to 0.2 recreate the tables empty.
-// The lock serializes the API's and the worker's instances, which start together.
+// source_row marks a 0.2 schema, so a schema shared with another catalogkit
+// plugin, as in make check, keeps its tables. The lock serializes the API's
+// and the worker's instances, which start together.
 func dropOldTables(ctx context.Context, url string) error {
 	conn, err := pgx.Connect(ctx, url)
 	if err != nil {
@@ -73,8 +75,14 @@ func dropOldTables(ctx context.Context, url string) error {
 	}
 	defer conn.Close(ctx)
 	return pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('catalogkit:' || current_schema()));
-DROP TABLE IF EXISTS source_row, parent, item_version, item, migration;
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('catalogkit:' || current_schema()))`); err != nil {
+			return err
+		}
+		var old bool
+		if err := tx.QueryRow(ctx, `SELECT to_regclass('source_row') IS NOT NULL`).Scan(&old); err != nil || !old {
+			return err
+		}
+		_, err := tx.Exec(ctx, `DROP TABLE source_row, parent, item_version, item, migration;
 DROP FUNCTION IF EXISTS tags_text(text[]);`)
 		if err != nil {
 			return fmt.Errorf("drop chub-archive 0.2 tables: %w", err)

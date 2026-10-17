@@ -52,6 +52,27 @@ func TestDropOldTables(t *testing.T) {
 	}
 }
 
+// Without source_row, the catalogkit tables belong to another plugin.
+func TestDropOldTablesKeepsAnotherPluginsTables(t *testing.T) {
+	ctx := context.Background()
+	url := pgtest.URL(t)
+	conn, err := pgx.Connect(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	if _, err := conn.Exec(ctx, `CREATE TABLE migration (name text); CREATE TABLE item (id text)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := dropOldTables(ctx, url); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := conn.QueryRow(ctx, `SELECT count(*) FROM information_schema.tables WHERE table_schema = current_schema()`).Scan(&n); err != nil || n != 2 {
+		t.Fatalf("%d tables left, err %v; want both kept", n, err)
+	}
+}
+
 func TestConfigImages(t *testing.T) {
 	if got, err := configImages(map[string]any{"images": []any{"/a", "", "/b"}}); err != nil || !slices.Equal(got, []string{"/a", "/b"}) {
 		t.Fatalf("images = %v, %v", got, err)
