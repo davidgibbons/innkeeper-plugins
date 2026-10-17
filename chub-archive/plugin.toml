@@ -1,8 +1,11 @@
 name = "chub-archive"
-version = "0.2.0"
+version = "0.2.1"
 protocol = 1
 command = ["./chub-archive"]
 capabilities = ["catalog"]
+multiple_instances = true
+description = "Search and adopt cards and lorebooks from the chub.ai archive's SQL dump."
+category = "Archives"
 database = true
 
 [config]

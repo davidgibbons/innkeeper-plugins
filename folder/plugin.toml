@@ -1,8 +1,11 @@
 name = "folder"
-version = "0.1.0"
+version = "0.1.1"
 protocol = 1
 command = ["./folder"]
 capabilities = ["catalog"]
+multiple_instances = true
+description = "Search and adopt cards and lorebooks from a folder, without importing them all."
+category = "Archives"
 database = true
 
 [config]

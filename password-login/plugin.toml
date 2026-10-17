@@ -1,6 +1,9 @@
 name = "password-login"
-version = "0.2.0"
+version = "0.2.1"
 protocol = 1
 command = ["./password-login"]
 capabilities = ["auth"]
+multiple_instances = true
+description = "Log in as the owner with one password."
+category = "Login"
 secrets = ["password_hash"]

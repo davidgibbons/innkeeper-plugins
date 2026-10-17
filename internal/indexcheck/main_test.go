@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -24,10 +25,10 @@ func TestCheckFindsProblems(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	manifest := "name = %q\nversion = \"1.0.0\"\nprotocol = 1\ncommand = [%q]\ncapabilities = [\"push\"]\n"
-	write("a/plugin.toml", fmt.Sprintf(manifest, "a", "./a"))
-	write("b/plugin.toml", fmt.Sprintf(manifest, "b", "./b"))
-	write("c/plugin.toml", fmt.Sprintf(manifest, "c", "./other"))
+	manifest := "name = %q\nversion = \"1.0.0\"\nprotocol = 1\ncommand = [%q]\ncapabilities = [\"push\"]\ndescription = %q\n"
+	write("a/plugin.toml", fmt.Sprintf(manifest, "a", "./a", "Version doesn't match."))
+	write("b/plugin.toml", fmt.Sprintf(manifest, "b", "./b", "Not listed."))
+	write("c/plugin.toml", fmt.Sprintf(manifest, "c", "./other", "Command isn't ./c."))
 	write("index.toml", `
 categories = ["Apps"]
 
@@ -69,5 +70,30 @@ func TestCheckRejectsRepoRootPath(t *testing.T) {
 	}
 	if errs := check(root); len(errs) != 1 {
 		t.Fatalf("got %d problems, want 1: %v", len(errs), errs)
+	}
+}
+
+func TestCheckRejectsMismatchedDescriptionAndCategory(t *testing.T) {
+	for field, manifestExtra := range map[string]string{
+		"description": "description = \"Other.\"\ncategory = \"Apps\"\n",
+		"category":    "description = \"Same.\"\ncategory = \"Import\"\n",
+	} {
+		t.Run(field, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(root, "a"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			manifest := "name = \"a\"\nversion = \"1.0.0\"\nprotocol = 1\ncommand = [\"./a\"]\ncapabilities = [\"push\"]\n" + manifestExtra
+			index := "categories = [\"Apps\"]\n\n[[plugin]]\nname = \"a\"\npath = \"a\"\ncategory = \"Apps\"\nversion = \"1.0.0\"\nprotocol = 1\ncapabilities = [\"push\"]\ndescription = \"Same.\"\n"
+			for path, content := range map[string]string{"a/plugin.toml": manifest, "index.toml": index} {
+				if err := os.WriteFile(filepath.Join(root, path), []byte(content), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			errs := check(root)
+			if len(errs) != 1 || !strings.Contains(errs[0].Error(), field) {
+				t.Fatalf("want one error naming %s, got %v", field, errs)
+			}
+		})
 	}
 }

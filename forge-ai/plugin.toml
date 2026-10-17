@@ -1,8 +1,10 @@
 name = "forge-ai"
-version = "0.5.0"
+version = "0.5.1"
 protocol = 1
 command = ["./forge-ai"]
 capabilities = ["action", "records", "enrich", "settings"]
+description = "Write, revise, tighten, expand, and evaluate cards, write examples, alternate greetings, and lore entries, and score cards in bulk for the library grid, through an ai instance. Each action's instructions can be overridden on the Prompts tab. Keeps Agent Skills the model can load. Needs a core with the ai, action, records, enrich, and settings capabilities, and an ai instance offering chat."
+category = "AI"
 uses = ["ai.chat"]
 database = true
 

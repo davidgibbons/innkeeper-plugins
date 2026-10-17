@@ -1,6 +1,8 @@
 name = "card-codec"
-version = "0.2.0"
+version = "0.2.1"
 protocol = 1
 command = ["./card-codec"]
 capabilities = ["codec"]
+description = "Read and write character cards: CCv3, V2, and V1, as PNG and JSON. Also reads CharX."
+category = "Formats"
 formats = ["png", "json-v2"]

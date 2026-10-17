@@ -1,8 +1,10 @@
 name = "card-import"
-version = "0.2.1"
+version = "0.2.2"
 protocol = 1
 command = ["./card-import"]
 capabilities = ["import"]
+description = "Import character cards and lorebooks from a folder or an uploaded file."
+category = "Import"
 inputs = ["file"]
 
 [config]
