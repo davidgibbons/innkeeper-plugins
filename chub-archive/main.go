@@ -1,4 +1,4 @@
-// Command chub-archive is a catalog plugin over the chub.ai archive's SQL
+// Command chub-archive is an import plugin for the chub.ai archive's SQL
 // dump.
 package main
 
@@ -7,64 +7,88 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
-	"path/filepath"
+	"sync/atomic"
 
-	"github.com/inkandale/innkeeper-plugins/catalogkit"
-	"github.com/inkandale/innkeeper-plugins/internal/pluginio"
 	"github.com/inkandale/innkeeper/protocol"
 	"github.com/jackc/pgx/v5"
 )
 
-const version = "0.2.1"
-
-var catalogConfig = catalogkit.Config{
-	Kinds: []string{protocol.KindCard, protocol.KindLorebook},
-	Filters: []catalogkit.Filter{
-		{CatalogFilter: protocol.CatalogFilter{Name: "site", Label: "Site", Type: protocol.FilterEnum, Options: sites}, Field: "attrs.site"},
-		{CatalogFilter: protocol.CatalogFilter{Name: "tag", Label: "Tag", Type: protocol.FilterText}, Field: "tag"},
-		{CatalogFilter: protocol.CatalogFilter{Name: "author", Label: "Author", Type: protocol.FilterText}, Field: "author"},
-		{CatalogFilter: protocol.CatalogFilter{Name: "added", Label: "Date added", Type: protocol.FilterDateRange}, Field: "added"},
-		{CatalogFilter: protocol.CatalogFilter{Name: "rating", Label: "Rating", Type: protocol.FilterNumberRange}, Field: "nums.rating"},
-		{CatalogFilter: protocol.CatalogFilter{Name: "hidden", Label: "Hidden on its site", Type: protocol.FilterEnum,
-			Options: []protocol.CatalogOption{{Value: "false", Label: "Shown"}, {Value: "true", Label: "Hidden"}}}, Field: "attrs.hidden"},
-	},
-	Ingest: true,
-	Migrations: []catalogkit.Migration{{Name: "chub-archive/1-tables", SQL: `
-CREATE TABLE parent (instance text NOT NULL, item_id text NOT NULL, tags text[] NOT NULL, rating float8,
-	added timestamptz NOT NULL, hidden boolean NOT NULL, PRIMARY KEY (instance, item_id));
-CREATE TABLE source_row (instance text NOT NULL, item_id text NOT NULL, version text NOT NULL,
-	image_hash text NOT NULL, PRIMARY KEY (instance, item_id, version));
-`}},
-}
+const version = "0.3.0"
 
 // env is what initialize set up.
 type env struct {
-	store      *catalogkit.Store // nil without a database_url
-	dump       string            // config.dump
-	images     []string          // config.images
-	imageStore string            // config.image_store
-	blobTmp    string
+	images  []string // config.images
+	blobTmp string
 }
 
 func main() {
-	err := catalogkit.Serve(catalogkit.Plugin[*env]{Name: "chub-archive", Version: version, Config: catalogConfig,
-		Open: func(p protocol.InitializeParams, store *catalogkit.Store) (*env, error) {
-			e := &env{store: store, blobTmp: p.BlobTmp}
-			e.dump, _ = p.Config["dump"].(string)
-			e.imageStore, _ = p.Config["image_store"].(string)
-			var err error
-			if e.images, err = configImages(p.Config); err != nil {
+	// Set by initialize; requests run on other goroutines.
+	var cur atomic.Pointer[env]
+	var conn *protocol.Conn
+	handler := func(ctx context.Context, method string, params json.RawMessage) (any, error) {
+		switch method {
+		case protocol.MethodInitialize:
+			var p protocol.InitializeParams
+			if err := json.Unmarshal(params, &p); err != nil {
 				return nil, invalid(err)
 			}
-			return e, nil
-		},
-		Get: get, Ingest: ingest})
-	if err != nil {
+			images, err := configImages(p.Config)
+			if err != nil {
+				return nil, invalid(err)
+			}
+			if p.DatabaseURL != "" {
+				if err := dropOldTables(ctx, p.DatabaseURL); err != nil {
+					return nil, err
+				}
+			}
+			cur.Store(&env{images: images, blobTmp: p.BlobTmp})
+			return protocol.InitializeResult{Protocol: protocol.Version, Name: "chub-archive", Version: version,
+				Capabilities: []string{"import"}}, nil
+		case protocol.MethodShutdown:
+			return nil, nil
+		case protocol.MethodImportRun:
+			e := cur.Load()
+			if e == nil {
+				return nil, errors.New("import.run before initialize")
+			}
+			return run(ctx, e, conn.Notify, params)
+		}
+		return nil, protocol.MethodNotFound(method)
+	}
+	conn = protocol.NewConn(os.Stdin, os.Stdout, handler)
+	if err := conn.Run(context.Background()); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+// dropOldTables drops the catalog index that chub-archive 0.2 kept. Dropping
+// its migration record too lets a rollback to 0.2 recreate the tables empty.
+// source_row marks a 0.2 schema, so a schema shared with another catalogkit
+// plugin, as in make check, keeps its tables. The lock serializes the API's
+// and the worker's instances, which start together.
+func dropOldTables(ctx context.Context, url string) error {
+	conn, err := pgx.Connect(ctx, url)
+	if err != nil {
+		return err
+	}
+	defer conn.Close(ctx)
+	return pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('catalogkit:' || current_schema()))`); err != nil {
+			return err
+		}
+		var old bool
+		if err := tx.QueryRow(ctx, `SELECT to_regclass('source_row') IS NOT NULL`).Scan(&old); err != nil || !old {
+			return err
+		}
+		_, err := tx.Exec(ctx, `DROP TABLE source_row, parent, item_version, item, migration;
+DROP FUNCTION IF EXISTS tags_text(text[]);`)
+		if err != nil {
+			return fmt.Errorf("drop chub-archive 0.2 tables: %w", err)
+		}
+		return nil
+	})
 }
 
 // configImages reads config.images, a list of folders. Empty entries are skipped.
@@ -90,36 +114,6 @@ func configImages(cfg map[string]any) ([]string, error) {
 	return dirs, nil
 }
 
-// get answers catalog.get, with the version's image from the image store as
-// its avatar.
-func get(ctx context.Context, e *env, raw json.RawMessage) (protocol.CatalogGetResult, error) {
-	var p protocol.CatalogGetParams
-	if err := json.Unmarshal(raw, &p); err != nil {
-		return protocol.CatalogGetResult{}, invalid(err)
-	}
-	res, err := e.store.Get(ctx, p.ID, p.Version)
-	if err != nil || !p.Avatar || res.Item.Kind != protocol.KindCard {
-		return res, err
-	}
-	var hash string
-	err = e.store.Pool().QueryRow(ctx, `SELECT image_hash FROM source_row WHERE instance = $1 AND item_id = $2 AND version = $3`,
-		e.store.Instance(), p.ID, res.Version).Scan(&hash)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return res, nil
-	}
-	if err != nil {
-		return res, err
-	}
-	path := findStored(e.imageStore, hash)
-	if path == "" {
-		return res, nil
-	}
-	b, err := pluginio.ReadFile(path)
-	if err != nil {
-		// The item is still worth showing without its avatar.
-		log.Printf("get %s version %s: image %s: %v", p.ID, res.Version, hash, err)
-		return res, nil
-	}
-	res.Avatar, err = pluginio.WriteTmp(e.blobTmp, "avatar-*"+filepath.Ext(path), b)
-	return res, err
+func invalid(err error) error {
+	return protocol.NewError(protocol.CodeInvalidParams, err.Error(), false)
 }

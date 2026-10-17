@@ -10,8 +10,4 @@
 /forge-ai/forge-ai
 # Releases built by internal/publish.
 /dist/
-
-# The contract check's image store.
-/chub-archive/testdata/store/*
-!/chub-archive/testdata/store/.gitkeep
 /ai/ai

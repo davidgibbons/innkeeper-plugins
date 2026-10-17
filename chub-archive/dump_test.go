@@ -49,8 +49,8 @@ func TestDumpRows(t *testing.T) {
 	}
 	defer d.Close()
 	rows, after := readAll(t, d)
-	// Skipped tables don't appear; parents come before their defs.
-	if len(rows) != 12 || rows[0] != "booru_character_def:Coracat" || rows[1] != "chub_character:Ariaann" {
+	// Skipped tables don't appear; chub's per-item rows come before their versions, and the checkpoint marks where.
+	if len(rows) != 11 || after[1].Parents == 0 || rows[0] != "booru_character_def:Coracat" || rows[1] != "chub_character:Ariaann" {
 		t.Fatalf("rows = %v", rows)
 	}
 	info, err := os.Stat("testdata/dump.sql")

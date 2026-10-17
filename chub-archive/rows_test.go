@@ -1,25 +1,10 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"testing"
 	"time"
-
-	"github.com/inkandale/innkeeper-plugins/catalogkit"
-	"github.com/inkandale/innkeeper-plugins/internal/pgtest"
-	"github.com/inkandale/innkeeper/protocol"
 )
-
-func openStore(t *testing.T) *catalogkit.Store {
-	t.Helper()
-	s, err := catalogkit.Open(context.Background(), pgtest.URL(t), "test", catalogConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(s.Close)
-	return s
-}
 
 func TestPgTime(t *testing.T) {
 	for in, want := range map[string]time.Time{
@@ -37,52 +22,27 @@ func TestPgTime(t *testing.T) {
 	}
 }
 
-func TestEntry(t *testing.T) {
-	ctx := context.Background()
-	s := openStore(t)
-	def := map[string]string{"author": "ann", "name": "Aria", "id": "100", "hidden": "f", "increment": "9",
-		"added": "2024-10-02 09:50:16+00", "image_hash": "0",
-		"definition": `{"data": {"name": "Aria", "description": "An elf.", "creator": "ann", "tags": ["ranger"]}, "spec": "chara_card_v2", "spec_version": "2.0"}`}
-
-	e, err := entry(ctx, s, "chub_character_def", def)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if e.ID != "chub_character_def:100" || e.Kind != protocol.KindCard || e.Version != 9 || e.Author != "ann" ||
-		e.Tags != nil || e.Attrs["site"][0] != "chub" || e.Attrs["hidden"][0] != "false" {
-		t.Fatalf("entry = %+v", e)
-	}
-
-	// With its parent row, the entry takes chub's tags, rating, date, and hidden flag.
-	parent := map[string]string{"id": "100", "data": `{"rating": 4.5, "topics": ["Fantasy"]}`,
-		"added": "2024-05-06 17:36:35+00", "hidden": "t"}
-	if err := putParent(ctx, s, "chub_character", parent); err != nil {
-		t.Fatal(err)
-	}
-	e, err = entry(ctx, s, "chub_character_def", def)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if e.Tags[0] != "Fantasy" || e.Numbers["rating"] != 4.5 || e.Added.Year() != 2024 || e.Added.Month() != 5 ||
-		e.Attrs["hidden"][0] != "true" {
-		t.Fatalf("entry with parent = %+v", e)
-	}
-
-	// booru rows have no increment, so they are version 1.
-	booru := map[string]string{"author": "cat", "name": "Cora", "id": "+p1", "hidden": "f", "added": "2024-05-08 05:10:30+00",
-		"definition": def["definition"]}
-	if e, err = entry(ctx, s, "booru_character_def", booru); err != nil || e.Version != 1 || e.ID != "booru_character_def:+p1" {
-		t.Fatalf("booru entry = %+v, %v", e, err)
-	}
-
+func TestReadVersionRejectsBadRows(t *testing.T) {
+	def := `{"data": {"name": "Aria"}, "spec": "chara_card_v2", "spec_version": "2.0"}`
 	for name, bad := range map[string]map[string]string{
 		"definition": {"id": "1", "increment": "1", "added": "2024-01-01 00:00:00+00", "definition": `{"data": "no"}`},
-		"increment":  {"id": "1", "increment": "x", "added": "2024-01-01 00:00:00+00", "definition": def["definition"]},
-		"added":      {"id": "1", "increment": "1", "added": "soon", "definition": def["definition"]},
-		"no id":      {"increment": "1", "added": "2024-01-01 00:00:00+00", "definition": def["definition"]},
+		"increment":  {"id": "1", "increment": "x", "added": "2024-01-01 00:00:00+00", "definition": def},
+		"added":      {"id": "1", "increment": "1", "added": "soon", "definition": def},
+		"no date":    {"id": "1", "increment": "1", "definition": def},
+		"no id":      {"increment": "1", "added": "2024-01-01 00:00:00+00", "definition": def},
 	} {
-		if _, err := entry(ctx, s, "chub_character_def", bad); !errors.Is(err, errBadRow) {
+		if _, err := readVersion("chub_character_def", bad, nil); !errors.Is(err, errBadRow) {
 			t.Errorf("%s: err = %v, want errBadRow", name, err)
 		}
+	}
+}
+
+// booru rows date a version by created when added is missing.
+func TestReadVersionFallsBackToCreated(t *testing.T) {
+	row := map[string]string{"id": "1", "created": "2024-01-02 00:00:00+00",
+		"definition": `{"data": {"name": "Aria"}, "spec": "chara_card_v2", "spec_version": "2.0"}`}
+	v, err := readVersion("booru_character_def", row, nil)
+	if err != nil || !v.created.Equal(time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("created = %v, err %v; want the created column", v.created, err)
 	}
 }

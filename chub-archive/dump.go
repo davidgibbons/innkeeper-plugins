@@ -12,17 +12,19 @@ import (
 	"strings"
 )
 
-// errBadRow marks a dump row the plugin can't read. Ingest skips it.
+// errBadRow marks a dump row the plugin can't read. The import skips it.
 var errBadRow = errors.New("bad row")
 
-// checkpoint is where ingest is in the dump: the byte offset of the next
-// line, and the COPY block it is in, if any. Size is the dump's, so a
-// checkpoint isn't used on another dump.
+// checkpoint is where the import is in the dump: the byte offset of the
+// next line, and the COPY block it is in, if any. Size is the dump's, so a
+// checkpoint isn't used on another dump. Parents is the offset of chub's
+// per-item block once read, for a resumed run to read it again.
 type checkpoint struct {
 	Table   string   `json:"table,omitempty"`
 	Columns []string `json:"columns,omitempty"`
 	Offset  int64    `json:"offset"`
 	Size    int64    `json:"size,omitempty"`
+	Parents int64    `json:"parents,omitempty"`
 }
 
 // dump reads the rows of a pg_dump plain-text file's COPY blocks.
@@ -62,7 +64,7 @@ func openDump(path string, at checkpoint) (*dump, error) {
 
 func (d *dump) Close() error { return d.f.Close() }
 
-// next returns the next row of a table ingest reads, as column to value. A
+// next returns the next row of a table the import reads, as column to value. A
 // NULL column is absent. It returns io.EOF after the last row, and errBadRow
 // for a row with the wrong number of fields.
 func (d *dump) next(ctx context.Context) (table string, row map[string]string, err error) {
@@ -81,11 +83,15 @@ func (d *dump) next(ctx context.Context) (table string, row map[string]string, e
 			return "", nil, err
 		}
 		d.lines++
+		start := d.at.Offset
 		d.at.Offset += int64(len(line))
 		line = bytes.TrimSuffix(line, []byte("\n"))
 		if d.at.Table == "" {
 			if m := copyHeader.FindSubmatch(line); m != nil {
 				d.at.Table, d.at.Columns = string(m[1]), strings.Split(string(m[2]), ", ")
+				if d.at.Table == parentTable {
+					d.at.Parents = start
+				}
 			}
 			continue
 		}

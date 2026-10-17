@@ -63,12 +63,12 @@ description = "Search and adopt cards and lorebooks from a folder, without impor
 
 [[plugin]]
 name = "chub-archive"
-category = "Archives"
+category = "Import"
 path = "chub-archive"
-version = "0.2.1"
+version = "0.3.0"
 protocol = 1
-capabilities = ["catalog"]
-description = "Search and adopt cards and lorebooks from the chub.ai archive's SQL dump."
+capabilities = ["import"]
+description = "Import the chub.ai archive's SQL dump into a library, one card per item with every version."
 
 [[plugin]]
 name = "url-import"
