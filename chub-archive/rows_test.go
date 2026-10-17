@@ -28,10 +28,21 @@ func TestReadVersionRejectsBadRows(t *testing.T) {
 		"definition": {"id": "1", "increment": "1", "added": "2024-01-01 00:00:00+00", "definition": `{"data": "no"}`},
 		"increment":  {"id": "1", "increment": "x", "added": "2024-01-01 00:00:00+00", "definition": def},
 		"added":      {"id": "1", "increment": "1", "added": "soon", "definition": def},
+		"no date":    {"id": "1", "increment": "1", "definition": def},
 		"no id":      {"increment": "1", "added": "2024-01-01 00:00:00+00", "definition": def},
 	} {
 		if _, err := readVersion("chub_character_def", bad, nil); !errors.Is(err, errBadRow) {
 			t.Errorf("%s: err = %v, want errBadRow", name, err)
 		}
+	}
+}
+
+// booru rows date a version by created when added is missing.
+func TestReadVersionFallsBackToCreated(t *testing.T) {
+	row := map[string]string{"id": "1", "created": "2024-01-02 00:00:00+00",
+		"definition": `{"data": {"name": "Aria"}, "spec": "chara_card_v2", "spec_version": "2.0"}`}
+	v, err := readVersion("booru_character_def", row, nil)
+	if err != nil || !v.created.Equal(time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("created = %v, err %v; want the created column", v.created, err)
 	}
 }

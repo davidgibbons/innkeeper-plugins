@@ -169,6 +169,61 @@ func TestImportResumes(t *testing.T) {
 	}
 }
 
+// Resuming from a checkpoint inside chub's per-item block reads the rows
+// before it again, and resuming past chub's versions sends the rest.
+func TestImportResumesAroundChubsPerItemBlock(t *testing.T) {
+	old := checkpointEvery
+	checkpointEvery = 1
+	t.Cleanup(func() { checkpointEvery = old })
+
+	for _, tc := range []struct {
+		table string
+		sent  int // versions sent before the stop
+	}{{"chub_character", 1}, {"generic_character_def", 6}} {
+		e := testEnv(t)
+		first, err := runImport(t, e, "", func(cp string) bool { return strings.Contains(cp, `"table":"`+tc.table+`"`) })
+		if err == nil || len(first.order) != tc.sent {
+			t.Fatalf("%s: stopped after %v, err %v; want %d versions sent", tc.table, first.order, err, tc.sent)
+		}
+		rest, _ := runImport(t, e, first.cps[len(first.cps)-1], nil)
+		if got := append(first.order, rest.order...); len(got) != 9 {
+			t.Fatalf("%s: sent %v across both runs, want each version once", tc.table, got)
+		}
+		if tc.table == "chub_character" {
+			if got := values(sentCard(t, rest, "chub_character_def:100", "Version 5")); got["rating"] != "4.5" {
+				t.Fatalf("resumed Aria's values = %v, want chub's rating", got)
+			}
+		}
+	}
+}
+
+// A run that stops early leaves in blob_tmp only the avatars it sent.
+func TestImportStoppedEarlyRemovesUnsentAvatars(t *testing.T) {
+	e := testEnv(t)
+	errStop := errors.New("stopped")
+	var sentAvatars []string
+	notify := func(method string, params any) error {
+		c, ok := params.(protocol.EmitCard)
+		if !ok {
+			return nil
+		}
+		if c.Version == "Version 9" {
+			return errStop
+		}
+		if c.Avatar != "" {
+			sentAvatars = append(sentAvatars, c.Avatar)
+		}
+		return nil
+	}
+	if _, err := run(context.Background(), e, notify, importParams("testdata/dump.sql", "")); err == nil {
+		t.Fatal("the run wasn't stopped")
+	}
+	left, _ := filepath.Glob(filepath.Join(e.blobTmp, "*"))
+	if !slices.Equal(left, sentAvatars) || len(left) != 1 {
+		t.Fatalf("blob_tmp holds %v, want only the avatar sent, %v", left, sentAvatars)
+	}
+}
+
 func TestImportRefusesAnotherDumpsCheckpoint(t *testing.T) {
 	e := testEnv(t)
 	_, err := run(context.Background(), e, func(string, any) error { return nil }, importParams("testdata/dump.sql", `{"offset": 10, "size": 1}`))

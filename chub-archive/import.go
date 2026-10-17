@@ -41,6 +41,13 @@ type pending struct {
 	done      chan struct{}
 }
 
+// dropAvatar deletes the row's avatar file, for a row the core won't take.
+func (r *pending) dropAvatar() {
+	if r.avatar != "" {
+		os.Remove(r.avatar)
+	}
+}
+
 // notifyFunc sends a notification to the core.
 type notifyFunc func(method string, params any) error
 
@@ -77,7 +84,8 @@ func run(ctx context.Context, e *env, notify notifyFunc, raw json.RawMessage) (a
 	}
 	defer d.Close()
 	parents := map[string]parent{}
-	if at.Parents != 0 && at.Offset > at.Parents {
+	// Only chub's versions read the per-item rows, and they follow the block directly.
+	if at.Parents != 0 && (at.Table == parentTable || at.Table == parentVersions) {
 		if parents, err = readParents(ctx, ps.Dump, at); err != nil {
 			return nil, retryable(err)
 		}
@@ -94,8 +102,15 @@ func run(ctx context.Context, e *env, notify notifyFunc, raw json.RawMessage) (a
 	// still in flight.
 	ctx, cancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
-	defer func() { cancel(); wg.Wait() }()
 	rows := make(chan *pending, imageReaders)
+	defer func() {
+		cancel()
+		wg.Wait()
+		// Rows read ahead but never sent leave their avatars behind otherwise.
+		for r := range rows {
+			r.dropAvatar()
+		}
+	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -119,6 +134,8 @@ func run(ctx context.Context, e *env, notify notifyFunc, raw json.RawMessage) (a
 			select {
 			case rows <- r:
 			case <-ctx.Done():
+				<-r.done
+				r.dropAvatar()
 				return
 			}
 			if err != nil && !errors.Is(err, errBadRow) {
@@ -128,10 +145,11 @@ func run(ctx context.Context, e *env, notify notifyFunc, raw json.RawMessage) (a
 	}()
 	n := 0
 	for r := range rows {
+		<-r.done
 		if err := ctx.Err(); err != nil {
+			r.dropAvatar()
 			return nil, err
 		}
-		<-r.done
 		n++
 		err := r.err
 		if err == nil {
@@ -142,11 +160,11 @@ func run(ctx context.Context, e *env, notify notifyFunc, raw json.RawMessage) (a
 		}
 		switch {
 		case errors.Is(err, errBadRow):
-			if r.avatar != "" {
-				os.Remove(r.avatar)
-			}
+			r.dropAvatar()
 			log.Printf("skipped %s %s increment %s, ending at byte %d: %v", r.table, r.row[idColumn(r.table)], r.row["increment"], r.at.Offset, err)
 		case err != nil:
+			// A failed send leaves the file with the plugin, not the core.
+			r.dropAvatar()
 			return nil, retryable(err)
 		}
 		if n%checkpointEvery == 0 {

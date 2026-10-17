@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -95,8 +96,13 @@ func readVersion(table string, row map[string]string, parents map[string]parent)
 		}
 		v.label = "Version " + inc
 	}
+	// The core orders an item's versions by created, so a version without a date can't be placed.
+	date := cmp.Or(row["added"], row["created"])
+	if date == "" {
+		return v, fmt.Errorf("%w: no added or created date", errBadRow)
+	}
 	var err error
-	if v.created, err = pgTime(row["added"]); err != nil {
+	if v.created, err = pgTime(date); err != nil {
 		return v, err
 	}
 	if src.kind == protocol.KindLorebook {

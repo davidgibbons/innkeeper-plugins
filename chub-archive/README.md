@@ -8,9 +8,9 @@ or lorebook per archive item, with each of its versions as a revision.
 
 1. Extract the takeout's `.7z` files. The plugin reads the extracted dump
    and image folders.
-2. Mount the extracted archive read-only where the core can read it, in both
-   the API and worker containers on Kubernetes. It only needs to be mounted
-   while an import runs.
+2. Mount the extracted archive read-only where the worker runs imports, the
+   worker container on Kubernetes. It only needs to be mounted while an
+   import runs.
 3. In Innkeeper, create a library for the archive, such as "Chub archive".
 4. Create a chub-archive instance. Set **Image folders** to the
    `hashed-data` folders under the archive's `sql` folder.
@@ -32,7 +32,9 @@ store isn't touched: delete that folder by hand once the import has run.
   same cards. The webring and generic tables have no ID, so theirs is the
   row's card hash and each row is its own item.
 - Each row is one version, sent in dump order with the message
-  `Version <increment>` and the row's date. Booru items have one version.
+  `Version <increment>` and the row's `added` date, or its `created` date
+  without one. A row with neither is skipped, since the core orders an
+  item's versions by date. Booru items have one version.
 - Cards carry these values, shown as enrichments from the instance:
 
   | Key | From |
