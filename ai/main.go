@@ -15,7 +15,7 @@ import (
 	anyllm "github.com/mozilla-ai/any-llm-go"
 )
 
-const version = "0.1.1"
+const version = "0.1.2"
 
 // connection is what initialize configured. llm is nil for the empty config
 // the core's settings process starts with.

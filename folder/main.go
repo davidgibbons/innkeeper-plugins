@@ -17,7 +17,7 @@ import (
 	"github.com/inkandale/innkeeper/protocol"
 )
 
-const version = "0.1.0"
+const version = "0.1.1"
 
 var catalogConfig = catalogkit.Config{
 	Kinds: []string{protocol.KindCard, protocol.KindLorebook},

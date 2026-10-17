@@ -18,7 +18,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-const version = "0.2.0"
+const version = "0.2.1"
 
 // subject is who every login is. The owner sets it as the instance's owner_subject.
 const subject = "owner"

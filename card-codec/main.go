@@ -14,7 +14,7 @@ import (
 	"github.com/inkandale/innkeeper/protocol"
 )
 
-const version = "0.2.0"
+const version = "0.2.1"
 
 func main() {
 	// Set by initialize; requests run on other goroutines.
