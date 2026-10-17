@@ -1,17 +1,13 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/inkandale/innkeeper-plugins/card"
-	"github.com/inkandale/innkeeper-plugins/catalogkit"
 	"github.com/inkandale/innkeeper/protocol"
-	"github.com/jackc/pgx/v5"
 )
 
 // source is a table whose rows are card or lorebook versions.
@@ -32,24 +28,36 @@ var sources = map[string]source{
 	"generic_character_def": {protocol.KindCard, "card_data_hash", "generic"},
 }
 
-// parents are chub's per-item tables, with the table of versions each
-// describes. pg_dump writes each before its versions.
-var parents = map[string]string{"chub_character": "chub_character_def", "chub_lorebook": "chub_lorebook_def"}
+// parentTable is chub's per-item card table, which pg_dump writes before
+// parentVersions, the versions it describes.
+const (
+	parentTable    = "chub_character"
+	parentVersions = "chub_character_def"
+)
 
-// read reports whether ingest reads table's rows.
+// read reports whether the import reads table's rows.
 func read(table string) bool {
 	_, ok := sources[table]
-	_, parent := parents[table]
-	return ok || parent
+	return ok || table == parentTable
 }
 
-var sites = []protocol.CatalogOption{
-	{Value: "chub", Label: "Chub"},
-	{Value: "booru", Label: "Pygmalion Booru"},
-	{Value: "nyaime", Label: "Nyai.me"},
-	{Value: "risuai", Label: "RisuRealm"},
-	{Value: "webring", Label: "Webring"},
-	{Value: "generic", Label: "Other (JanitorAI, catbox)"},
+// parent is what a chub per-item row adds to its versions.
+type parent struct {
+	rating *float64
+	topics []string
+	hidden bool
+}
+
+// readParent reads a chub per-item row, keyed by its versions' item ID.
+func readParent(row map[string]string) (string, parent, error) {
+	var data struct {
+		Rating *float64 `json:"rating"`
+		Topics []string `json:"topics"`
+	}
+	if err := json.Unmarshal([]byte(row["data"]), &data); err != nil {
+		return "", parent{}, fmt.Errorf("%w: data: %w", errBadRow, err)
+	}
+	return parentVersions + ":" + row["id"], parent{rating: data.Rating, topics: data.Topics, hidden: row["hidden"] == "t"}, nil
 }
 
 // pgTime parses a timestamptz as pg_dump writes it, such as
@@ -63,76 +71,66 @@ func pgTime(s string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("%w: timestamp %q", errBadRow, s)
 }
 
-// putParent stores a chub per-item row for its versions to read.
-func putParent(ctx context.Context, s *catalogkit.Store, table string, row map[string]string) error {
-	var data struct {
-		Rating *float64 `json:"rating"`
-		Topics []string `json:"topics"`
-	}
-	if err := json.Unmarshal([]byte(row["data"]), &data); err != nil {
-		return fmt.Errorf("%w: data: %w", errBadRow, err)
-	}
-	added, err := pgTime(row["added"])
-	if err != nil {
-		return err
-	}
-	if data.Topics == nil {
-		data.Topics = []string{}
-	}
-	id := parents[table] + ":" + row["id"]
-	_, err = s.Pool().Exec(ctx, `
-		INSERT INTO parent (instance, item_id, tags, rating, added, hidden) VALUES ($1, $2, $3, $4, $5, $6)
-		ON CONFLICT (instance, item_id) DO UPDATE SET tags = excluded.tags, rating = excluded.rating,
-			added = excluded.added, hidden = excluded.hidden`,
-		s.Instance(), id, data.Topics, data.Rating, added, row["hidden"] == "t")
-	return catalogkit.BadData(id, err)
+// entry is one row of a source table, as the import sends it.
+type entry struct {
+	item    string
+	kind    string
+	label   string
+	created time.Time
+	data    json.RawMessage // a CCv3 card, or a character_book
+	values  map[string]json.RawMessage
 }
 
-// entry turns a row of a source table into one version of its item.
-func entry(ctx context.Context, s *catalogkit.Store, table string, row map[string]string) (catalogkit.Entry, error) {
+// readVersion turns a row of a source table into one version of its item.
+// parents holds chub's per-item rows read so far.
+func readVersion(table string, row map[string]string, parents map[string]parent) (entry, error) {
 	src := sources[table]
-	e := catalogkit.Entry{ID: table + ":" + row[src.idCol], Kind: src.kind, Author: row["author"], Version: 1,
-		Attrs: map[string][]string{"site": {src.site}, "hidden": {strconv.FormatBool(row["hidden"] == "t")}}}
+	v := entry{item: table + ":" + row[src.idCol], kind: src.kind, label: "Version 1"}
 	if row[src.idCol] == "" {
-		return e, fmt.Errorf("%w: no %s", errBadRow, src.idCol)
+		return v, fmt.Errorf("%w: no %s", errBadRow, src.idCol)
+	}
+	if inc, ok := row["increment"]; ok {
+		if n, err := strconv.Atoi(inc); err != nil || n < 1 {
+			return v, fmt.Errorf("%w: increment %q", errBadRow, inc)
+		}
+		v.label = "Version " + inc
 	}
 	var err error
-	if inc, ok := row["increment"]; ok {
-		if e.Version, err = strconv.Atoi(inc); err != nil || e.Version < 1 {
-			return e, fmt.Errorf("%w: increment %q", errBadRow, inc)
-		}
+	if v.created, err = pgTime(row["added"]); err != nil {
+		return v, err
 	}
-	if e.Updated, err = pgTime(row["added"]); err != nil {
-		return e, err
-	}
-	e.Added = e.Updated
 	if src.kind == protocol.KindLorebook {
-		e.Data, err = card.DecodeLorebook([]byte(row["definition"]), row["name"])
+		v.data, err = card.DecodeLorebook([]byte(row["definition"]), row["name"])
 	} else {
-		e.Data, _, err = card.Decode([]byte(row["definition"]))
+		v.data, _, err = card.Decode([]byte(row["definition"]))
 	}
 	if err != nil {
-		return e, fmt.Errorf("%w: %w", errBadRow, err)
+		return v, fmt.Errorf("%w: %w", errBadRow, err)
 	}
+	if src.kind == protocol.KindCard {
+		v.values = cardValues(src.site, row["hidden"] == "t", parents[v.item])
+	}
+	return v, nil
+}
 
-	var tags []string
-	var rating *float64
-	var added time.Time
-	var hidden bool
-	err = s.Pool().QueryRow(ctx, `SELECT tags, rating, added, hidden FROM parent WHERE instance = $1 AND item_id = $2`,
-		s.Instance(), e.ID).Scan(&tags, &rating, &added, &hidden)
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		return e, nil
-	case err != nil:
-		return e, err
+// cardValues are a card version's values for the manifest's [enrichments].
+func cardValues(site string, hidden bool, p parent) map[string]json.RawMessage {
+	values := map[string]json.RawMessage{"site": jsonValue(site)}
+	if hidden || p.hidden {
+		values["hidden"] = jsonValue("yes")
 	}
-	e.Tags, e.Added = tags, added
-	if rating != nil {
-		e.Numbers = map[string]float64{"rating": *rating}
+	if p.rating != nil {
+		values["rating"] = jsonValue(*p.rating)
 	}
-	if hidden {
-		e.Attrs["hidden"] = []string{"true"}
+	if len(p.topics) > 0 {
+		values["topics"] = jsonValue(p.topics)
 	}
-	return e, nil
+	return values
+}
+
+// jsonValue marshals a string, a float read from JSON, or a string slice,
+// none of which can fail.
+func jsonValue(v any) json.RawMessage {
+	b, _ := json.Marshal(v)
+	return b
 }

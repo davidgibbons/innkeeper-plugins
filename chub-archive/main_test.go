@@ -2,49 +2,53 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
-	"github.com/inkandale/innkeeper/protocol"
+	"github.com/inkandale/innkeeper-plugins/internal/pgtest"
+	"github.com/jackc/pgx/v5"
 )
 
-func getParams(id, version string) json.RawMessage {
-	b, _ := json.Marshal(protocol.CatalogGetParams{ID: id, Version: version, Avatar: true})
-	return b
-}
+// tables02 is the schema chub-archive 0.2 left, cut to what matters for the drop.
+const tables02 = `
+CREATE TABLE migration (name text PRIMARY KEY, applied timestamptz NOT NULL DEFAULT now());
+CREATE FUNCTION tags_text(text[]) RETURNS text LANGUAGE sql IMMUTABLE AS $$ SELECT array_to_string($1, ' ') $$;
+CREATE TABLE item (instance text, id text, PRIMARY KEY (instance, id));
+CREATE TABLE item_version (instance text, item_id text, version text,
+	FOREIGN KEY (instance, item_id) REFERENCES item (instance, id));
+CREATE TABLE parent (instance text, item_id text);
+CREATE TABLE source_row (instance text, item_id text, version text);
+CREATE TABLE unrelated (id int);`
 
-func TestGetAvatar(t *testing.T) {
-	e := testEnv(t)
-	runIngest(t, e, "", nil)
-	e.images = nil // The takeout is unmounted after ingest.
+func TestDropOldTables(t *testing.T) {
 	ctx := context.Background()
-
-	for _, version := range []string{"", "5"} {
-		res, err := get(ctx, e, getParams("chub_character_def:100", version))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if res.Avatar == "" || filepath.Dir(res.Avatar) != e.blobTmp {
-			t.Fatalf("version %q: avatar = %q, want a file in %s", version, res.Avatar, e.blobTmp)
-		}
-	}
-	// Brin's image isn't in the archive; the lorebook has none.
-	for _, id := range []string{"chub_character_def:101", "chub_lorebook_def:200"} {
-		if res, err := get(ctx, e, getParams(id, "")); err != nil || res.Avatar != "" {
-			t.Fatalf("%s: avatar = %q, err %v; want none", id, res.Avatar, err)
-		}
-	}
-
-	// An image missing from the store leaves the item without an avatar, not an error.
-	if err := os.Remove(findStored(e.imageStore, fixtureHash)); err != nil {
+	url := pgtest.URL(t)
+	conn, err := pgx.Connect(ctx, url)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if res, err := get(ctx, e, getParams("chub_character_def:100", "")); err != nil || res.Avatar != "" {
-		t.Fatalf("missing image: avatar = %q, err %v; want none", res.Avatar, err)
+	defer conn.Close(ctx)
+	if _, err := conn.Exec(ctx, tables02); err != nil {
+		t.Fatal(err)
+	}
+	// Twice: the second run finds nothing to drop.
+	for range 2 {
+		if err := dropOldTables(ctx, url); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := conn.Query(ctx, `SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()
+		UNION ALL SELECT routine_name FROM information_schema.routines WHERE routine_schema = current_schema()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	left, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(left, []string{"unrelated"}) {
+		t.Fatalf("left %s, want only unrelated", strings.Join(left, ", "))
 	}
 }
 

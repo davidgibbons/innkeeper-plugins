@@ -1,28 +1,25 @@
 name = "chub-archive"
-version = "0.2.1"
+version = "0.3.0"
 protocol = 1
 command = ["./chub-archive"]
-capabilities = ["catalog"]
+capabilities = ["import"]
+bulk = true
 multiple_instances = true
-description = "Search and adopt cards and lorebooks from the chub.ai archive's SQL dump."
-category = "Archives"
+description = "Import the chub.ai archive's SQL dump into a library, one card per item with every version."
+category = "Import"
 database = true
 
 [config]
 type = "object"
 
-[config.properties.dump]
-type = "string"
-title = "Dump file"
-description = "Absolute path of the archive's SQL dump as the core sees it, such as /archive/sql/database_01-05-2025/char_archive_database_01-05-2025.sql."
-
 [config.properties.images]
 type = "array"
 title = "Image folders"
-description = "The archive's hashed-data folders, such as /archive/sql/hashed-data_part1/hashed-data. Without them, items have no image."
+description = "The archive's hashed-data folders, such as /archive/sql/hashed-data_part1/hashed-data. Without them, cards have no image."
 items = { type = "string" }
 
-[config.properties.image_store]
-type = "string"
-title = "Image store"
-description = "Absolute path of a writable folder that ingest copies the archive's images into, about 100 GB for the 01-05-2025 dump. Avatars are read from here, so the takeout needs mounting only while ingesting."
+[enrichments]
+rating = { type = "score", range = [0, 5], label = "Chub rating", grid = true }
+topics = { type = "list", label = "Chub topics" }
+site = { type = "text", label = "Archive site" }
+hidden = { type = "text", label = "Hidden on its site" }
