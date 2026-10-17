@@ -6,7 +6,7 @@ tool github.com/inkandale/innkeeper/cmd/innkeeper
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/inkandale/innkeeper v0.0.0-20261016194344-27566b3ea224
+	github.com/inkandale/innkeeper v0.0.0-20261017055734-1502031dcf2d
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/mozilla-ai/any-llm-go v0.9.0
 	golang.org/x/crypto v0.57.0
